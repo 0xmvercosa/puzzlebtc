@@ -58,28 +58,96 @@ e parte disso é ganho arquitetural da Ada sobre a Ampere, não do código. **As
 duas estão no mesmo patamar algorítmico.** Não compilei nenhuma das duas (sem
 GPU no ambiente), então trate a comparação como estimativa.
 
-## A aritmética de viabilidade
+## A aritmética que decide o projeto
 
-Puzzle #71 tem 2^70 ≈ 1,18×10²¹ chaves.
+Todas as estimativas em dólar usam **BTC = US$ 80.000**.
 
-| | chaves/s | #71 sozinho |
-|---|---|---|
-| CPU, 1 core | 55 mil | 680 milhões de anos |
-| RTX 3050 | 650 milhões | 57 mil anos |
-| RTX 5090 | 8,4 bilhões | **4.460 anos** |
+### Valor esperado por chave
 
-E é aqui que o pool deixa de ser conveniência e vira necessidade:
+A chave está em posição uniforme dentro do range, então varrer uma fração F do
+espaço dá probabilidade F de encontrá-la. Para um participante que varreu K
+chaves de um espaço de tamanho S:
 
-| GPUs (classe 5090) | tempo esperado para #71 |
+```
+E[recebimento] = (K / S) × prêmio × (0,50 + 0,20)
+```
+
+Os 0,50 são a chance de ele ser quem acha, proporcional ao trabalho dele; os 0,20
+são a fatia dele no bolo de quem ajudou. Simplificando:
+
+```
+E[$ por chave varrida] = 0,70 × prêmio ÷ S
+```
+
+**Esse número não depende do tamanho do pool.** É contraintuitivo e importa: mais
+participantes não aumentam o retorno por chave de ninguém. O que o pool muda é a
+frequência com que alguém ganha e o tempo até isso acontecer. O pool converte uma
+loteria que você nunca ganharia numa fatia proporcional e regular.
+
+| puzzle | espaço | prêmio (BTC) | prêmio (US$) | $/chave |
+|---|---|---|---|---|
+| #66 | 2⁶⁵ | 6,6 | 528.000 | 1,00 × 10⁻¹⁴ |
+| #67 | 2⁶⁶ | 6,7 | 536.000 | 5,09 × 10⁻¹⁵ |
+| #68 | 2⁶⁷ | 6,8 | 544.000 | 2,58 × 10⁻¹⁵ |
+| #69 | 2⁶⁸ | 6,9 | 552.000 | 1,31 × 10⁻¹⁵ |
+| #71 | 2⁷⁰ | 7,1 | 568.000 | 3,37 × 10⁻¹⁶ |
+| #75 | 2⁷⁴ | 7,5 | 600.000 | 2,22 × 10⁻¹⁷ |
+
+Cada puzzle a mais dobra o espaço e o prêmio quase não muda, então o retorno por
+chave cai pela metade a cada degrau.
+
+Os valores de prêmio seguem a estrutura conhecida do desafio (puzzles acima do
+#65 valendo cerca de N/10 BTC após o aporte de 2017). **Não consegui confirmar
+on-chain neste ambiente** — o proxy bloqueia APIs de blockchain. Quem for operar
+uma campanha precisa conferir o saldo real do endereço antes de anunciar valor.
+
+### Contra a conta de luz
+
+Energia a US$ 0,15/kWh, consumo estimado por hardware:
+
+| hardware | chaves/s | puzzle #67 | puzzle #69 | puzzle #71 |
+|---|---|---|---|---|
+| CPU 4 núcleos | 2,1 × 10⁶ | −$0,23 | −$0,23 | −$0,23 |
+| RTX 3050 | 6,5 × 10⁸ | −$0,18 | −$0,39 | −$0,45 |
+| RTX 4060 | 1,2 × 10⁹ | **+$0,13** | −$0,27 | −$0,38 |
+| RTX 4090 | 6,2 × 10⁹ | **+$1,29** | −$0,74 | −$1,26 |
+| Rig 6× 4090 | 3,7 × 10¹⁰ | **+$7,74** | −$4,42 | −$7,56 |
+
+Saldo por dia, por máquina. As taxas de GPU são afirmação dos autores das
+ferramentas, não medidas aqui; a de CPU é medida.
+
+### Ponto de equilíbrio
+
+| energia | RTX 4090 se paga até |
 |---|---|
-| 1 | 4.460 anos |
-| 100 | 45 anos |
-| 1.000 | **4,5 anos** |
-| 10.000 | **163 dias** |
+| US$ 0,15/kWh | puzzle #67 |
+| US$ 0,08/kWh | puzzle #68 |
+| US$ 0,05/kWh | puzzle #69 |
 
-Nenhum participante individual tem chance. Dez mil deles, juntos, têm.
+### O que isso implica para o projeto
 
-**O que isso não muda:** a probabilidade de sucesso em qualquer janela é
-proporcional à fração do keyspace varrida, e essa fração começa indistinguível de
-zero. Ninguém deve entrar esperando retorno. O campo `fraction_swept` da API
-devolve o número honesto, não um teatro de progresso.
+**A campanha deve mirar o menor puzzle ainda aberto.** Não é preferência, é a
+diferença entre o participante ganhar e perder dinheiro. No #67 uma 4090 paga a
+energia e sobra; no #71 ela queima US$ 1,26 por dia.
+
+**CPU nunca se paga.** Serve para testar a instalação e para curiosidade. Vender
+CPU como forma de ganhar dinheiro seria desonesto.
+
+**A campanha precisa mostrar a linha de equilíbrio antes da pessoa começar.** O
+participante tem que conseguir comparar com a tarifa dele e com o hardware dele
+antes de ligar a máquina.
+
+### Tempo, para dimensionar expectativa
+
+Puzzle #67 tem 2⁶⁶ ≈ 7,4 × 10¹⁹ chaves. Fração varrida por ano:
+
+| pool | chaves/s agregado | espaço por ano | tempo até 50% |
+|---|---|---|---|
+| 100 GPUs médias | 1,2 × 10¹¹ | 0,005% | ~9.700 anos |
+| 1.000 GPUs médias | 1,2 × 10¹² | 0,05% | ~970 anos |
+| 1.000 GPUs + 50 rigs | 3,1 × 10¹² | 0,13% | ~380 anos |
+
+Nenhum pool realista esgota o espaço. O que o pool faz é comprar bilhetes: cada
+chave varrida é uma chance, e o valor esperado por chave é o que está na tabela
+acima. Achar cedo é sorte, e sorte acontece — vários puzzles foram resolvidos com
+uma fração pequena do espaço varrida.

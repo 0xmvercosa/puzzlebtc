@@ -1,213 +1,231 @@
 # puzzlebtc
 
-Coordenador de busca distribuída para o [Bitcoin Puzzle](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx).
-Divide o keyspace em blocos, entrega um bloco aleatório a cada participante, e
-**verifica que o bloco foi de fato varrido por inteiro** antes de creditar o
-ticket que dá direito a uma fatia do prêmio.
+Uma busca coletiva pelas chaves do [Bitcoin Puzzle](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx),
+com código aberto e contabilidade aberta.
 
-A parte difícil não é dividir o trabalho — é provar que ele foi feito. Um pool
-que aceita "varri, não achei nada" na palavra do participante paga tickets para
-quem não gastou um watt. Este repositório resolve isso primeiro; o resto é
-encanamento.
+O espaço de busca é grande demais para qualquer máquina sozinha. A ideia aqui é
+juntar as máquinas de várias pessoas, dividir o espaço em lotes, e manter um
+registro verificável de quem varreu o quê. Quando alguém encontrar a chave, o
+prêmio é dividido entre todos que participaram, na proporção do trabalho de cada
+um.
 
-## Por que um pool
+O projeto é aberto em todos os sentidos que importam: o código, o protocolo, o
+registro de lotes e o rateio. Você pode rodar, auditar, ou subir o seu próprio
+coordenador.
 
-Os números, medidos e não estimados:
+---
 
-| | chaves/s | puzzle #71 sozinho |
+## Por que em conjunto
+
+O Bitcoin Puzzle existe desde 2015. Alguém colocou bitcoin em endereços com
+chaves de tamanho crescente e deixou lá, de propósito, como medida prática de
+quanto o espaço de chaves resiste a força bruta.
+
+Os puzzles pequenos caíram rápido. Os que restam têm espaços de 2⁶⁶ chaves para
+cima. Uma RTX 4090 varre cerca de 5×10¹⁴ chaves por dia, o que dá uma fração
+minúscula do total. Sozinha, ela pode rodar a vida inteira e não chegar perto.
+
+Mil delas juntas continuam não esgotando o espaço, mas passam a comprar um número
+sério de bilhetes. E principalmente: com rateio, cada participante recebe pelo
+trabalho que fez, mesmo quando a chave aparece na máquina de outro. É a diferença
+entre uma loteria que você quase certamente perde e uma participação
+proporcional.
+
+---
+
+## Como funciona
+
+O coordenador divide o espaço da campanha em lotes de tamanho fixo. Você pede um
+lote, ele te entrega um sorteado entre os que ninguém pegou, você varre, e devolve
+uma prova de que varreu. Lote verificado vira um ticket no seu nome.
+
+Lote já varrido nunca volta para a fila. Se você desistir no meio, o lote volta a
+ficar disponível depois que o prazo expira, e o que já estava confirmado continua
+seu.
+
+### A parte difícil: provar que você varreu
+
+Um pool que aceita "varri, não achei nada" na palavra de quem diz distribui
+tickets para quem não gastou um watt. Essa é a parte central do projeto, e é onde
+está a engenharia.
+
+**Testemunhas.** Uma chave é testemunha quando o HASH160 dela começa com N bits
+zero. Testemunhas são raras e não existe atalho para produzir uma: só hasheando
+chaves até aparecer. Quem varre o lote encontra elas sem custo nenhum, porque é a
+mesma comparação que o programa já faz contra o alvo. Quem tenta inventar a prova
+gasta exatamente o que gastaria fazendo o trabalho de verdade.
+
+Contar testemunhas mede quanto do lote foi varrido. Exigir testemunhas em cada
+pedaço do lote mede onde. Um buraco de 0,2% já deixa um pedaço vazio e a
+submissão é recusada. O coordenador ainda confere uma amostra com matemática de
+curva elíptica, sorteada a partir de um segredo dele, então mandar números que só
+parecem bem distribuídos também não passa.
+
+**Canários.** O coordenador planta algumas chaves conhecidas dentro do seu lote e
+inclui o HASH160 delas na lista que você compara. Um programa que está varrendo
+mas não está reportando o que encontra coleta testemunhas normalmente e mesmo
+assim não devolve os canários.
+
+As duas verificações custam tempo constante para o coordenador, independente do
+tamanho do lote. Especificação completa em [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
+---
+
+## Participando
+
+Precisa de uma GPU NVIDIA, ou CPU se for só para experimentar. Roda em Linux,
+macOS e Windows.
+
+```bash
+# roda dez lotes e sai
+puzzlebtc run --blocks 10
+
+# roda até você mandar parar
+puzzlebtc run
+
+# instala como serviço, para continuar com o PC ligado e você longe
+puzzlebtc service install
+```
+
+A interface mostra o lote atual com barra de progresso, seus tickets, e a
+velocidade da máquina.
+
+### O rateio
+
+Quando alguém encontra a chave: **50% para quem encontrou, 30% para a
+plataforma, 20% dividido entre todos os tickets**. Quem encontrou também tem
+tickets e participa dos 20% junto.
+
+Um ticket por lote verificado. Quem varreu mais recebe mais. Não tem mensalidade,
+nível, nem vantagem para quem chegou antes.
+
+---
+
+## As contas
+
+Vale saber no que você está entrando antes de ligar a máquina. Os números abaixo
+usam **BTC = US$ 80.000**; ajuste proporcionalmente se o preço mudar.
+
+A chave está em posição aleatória dentro do espaço, então varrer uma fração dele
+dá exatamente essa fração de chance de achar:
+
+```
+retorno esperado = 0,70 × prêmio × (suas chaves ÷ tamanho do espaço)
+```
+
+O 0,70 é a sua fatia possível: 50% se for você quem acha, mais 20% de rateio.
+
+Campanha do puzzle #67, prêmio de aproximadamente 6,7 BTC:
+
+| hardware | chaves por dia | retorno esperado/dia |
 |---|---|---|
-| CPU (1 core, Go) | 55 mil | 680 milhões de anos |
-| GPU (RTX 3050, `cacagpu`) | 650 milhões | 57 mil anos |
-| GPU (RTX 5090, `CUDACyclone`) | 8,4 bilhões | **4.460 anos** |
+| CPU 4 núcleos | 1,8 × 10¹¹ | US$ 0,001 |
+| RTX 4060 | 1,1 × 10¹⁴ | US$ 0,54 |
+| RTX 4090 | 5,4 × 10¹⁴ | US$ 2,73 |
+| Rig 6× 4090 | 3,2 × 10¹⁵ | US$ 16,38 |
 
-Uma GPU sozinha não resolve #71 — nem em mil vidas. Mil delas resolvem em ~4,5
-anos; dez mil, em ~163 dias. **A agregação é a única coisa que torna o problema
-tratável**, e é exatamente por isso que a contabilidade de quem varreu o quê
-precisa ser à prova de fraude.
+Retorno esperado é média de longo prazo, não pagamento periódico. Você acumula
+participação e recebe quando o pool encontrar. Pode passar um ano sem receber
+nada.
 
-Os números acima foram medidos, não estimados — a metodologia e a aritmética
-completa estão em [`docs/research/benchmarks.md`](docs/research/benchmarks.md).
+**A escolha da campanha é o que mais pesa.** Cada puzzle a mais dobra o espaço e o
+prêmio quase não muda, então o retorno por chave cai pela metade a cada degrau.
+Uma RTX 4090 rende US$ 2,73/dia no #67, US$ 0,70 no #69 e US$ 0,18 no #71. Por
+isso o pool mira sempre o menor puzzle ainda aberto, e a campanha ativa fica
+visível antes de você instalar qualquer coisa.
 
-## Como a prova de varredura funciona
+Em CPU o retorno é desprezível em qualquer campanha. Ela serve para testar a
+instalação e para acompanhar o projeto, não como forma de ganhar dinheiro.
 
-Duas metades independentes, ambas O(1) para o coordenador verificar.
+O seu retorno por chave não muda com o tamanho do pool, porque a sua fatia é
+proporcional ao seu trabalho. Mais participantes aumentam a frequência com que o
+pool encontra alguma coisa e diminuem o tempo de espera, mas não dividem o seu
+bolo.
 
-### Testemunhas — provam volume e cobertura
+Metodologia e as medições em [`docs/research/benchmarks.md`](docs/research/benchmarks.md).
 
-Uma chave é **testemunha** quando seu HASH160 tem pelo menos `witness_bits` bits
-zero à esquerda. Testemunhas são raras (1 em 2^`witness_bits`) e **não existe
-atalho para produzir uma que não seja hashear chaves até achar**.
+---
 
-Isso é o pulo do gato: quem varre o bloco de verdade as encontra de graça — é a
-mesmíssima comparação que o kernel já faz contra o alvo — enquanto quem forja
-precisa gastar, em média, **exatamente o custo honesto por testemunha
-inventada**. Forjar a prova nunca é mais barato que fazer o trabalho.
+## Como o prêmio é resgatado
 
-- **Contar** testemunhas limita *quanto* do bloco foi varrido.
-- **Exigir testemunhas em cada bucket** limita *onde*. Com os defaults, um buraco
-  de um bucket (0,2% do bloco) deixa aquele bucket vazio e é rejeitado na hora,
-  enquanto uma submissão honesta é rejeitada com probabilidade abaixo de 1e-8.
-- O coordenador ainda verifica **uma amostra aleatória** com matemática de curva
-  de verdade, então mandar offsets fabricados que apenas *parecem* bem
-  distribuídos também falha.
+O maior risco de um projeto assim é quem encontra a chave sumir com ela. Não dá
+para impedir por criptografia: quem varre o lote calcula a chave na própria
+máquina e nenhum protocolo tira ela de lá.
 
-Quais offsets entram na amostra deriva de um segredo do servidor — o participante
-não sabe quais pode se dar ao luxo de falsificar.
+O que dá para fazer é encurtar a janela até quase zero. Ao encontrar a chave, e
+antes de mostrar qualquer coisa na tela, o cliente monta uma transação levando o
+prêmio para um endereço multisig 2-de-3 publicado neste repositório, assina,
+transmite para vários nós, e só então reporta ao coordenador. São milissegundos
+entre achar e travar. O endereço de resgate está no código, então qualquer pessoa
+confere para onde o dinheiro vai antes de instalar. A distribuição sai do
+multisig conforme as regras publicadas, com ledger aberto.
 
-### Canários — provam que o caminho de reporte funciona
+Onde isso ainda falha, e vale dizer com todas as letras:
 
-Testemunhas provam que chaves foram hasheadas. Não provam que o participante
-*avisaria* alguém ao achar algo. Então o coordenador deriva alguns offsets
-"canário" de um segredo (sem armazenar nada — são recalculados na verificação) e
-inclui o HASH160 deles na watchlist entregue junto com o alvo real. Um worker com
-o caminho de reporte quebrado, desligado ou stubado coleta testemunhas
-normalmente e **ainda assim falha em devolver os canários**.
+- **Cliente modificado.** Quem alterar o código para não transmitir consegue
+  ficar com tudo. Contra isso: builds reproduzíveis e releases assinados, para
+  conferir que o binário bate com o código; e o registro público de quem estava
+  com cada lote. Os endereços do puzzle estão entre os mais observados do
+  Bitcoin, então moeda que se mova sem ninguém reportar identifica na hora quem
+  tinha aquele lote.
+- **Os donos do multisig podem conluiar.** Por isso 2-de-3 com uma parte
+  independente, regras publicadas antes de qualquer campanha começar, e ledger
+  aberto.
 
-### O que isso não faz
+Nenhuma das duas é garantia matemática. São incentivo e rastreabilidade, e é
+honesto chamar do que são.
 
-Nada aqui obriga quem encontra a chave a reportá-la. O endereço do puzzle é
-público, então o participante sempre consegue distinguir o acerto real de um
-canário. Ver [Modelo de confiança](#modelo-de-confiança).
+---
 
-## Rateio
+## Estado do projeto
 
-Padrão: **50% quem encontra / 30% plataforma / 20% dividido entre quem ajudou**,
-pro rata por tickets. Um ticket por bloco verificado, um bloco nunca gera dois.
+O coordenador funciona: divisão do keyspace, entrega aleatória de lotes,
+verificação de varredura, tickets e rateio. Os testes cobrem varredura honesta
+aceita, varredura parcial recusada por buraco de cobertura, testemunhas forjadas
+e duplicadas recusadas, cliente que não reporta recusado, prêmio falso recusado,
+lote expirado e lote de outra pessoa não resgatáveis, e rateio fechando exatamente
+no valor do prêmio.
 
-Toda a aritmética é em satoshis inteiros — `math/big`, nunca float. Um float64
-não representa todos os valores de satoshi acima de 2^53, e um erro de
-arredondamento de 1 satoshi por participante é o tipo de bug que destrói a
-confiança num pool para sempre. A divisão é exaustiva por construção: o resto da
-divisão inteira é distribuído por maior resto, e
-`Finder + Platform + Σ Helpers == prêmio` exatamente. Há um teste que varre
-prêmios e distribuições de ticket confirmando isso.
+Falta, em ordem:
 
-Se ninguém além de quem encontrou tiver tickets, os 20% vão para ele em vez de
-ficarem órfãos.
+1. **Identidade do participante.** Hoje o nome é auto-declarado, então qualquer um
+   credita ticket em qualquer nome, o que anula toda a verificação. É o primeiro
+   item e é bloqueante.
+2. **Resgate automático.** O mecanismo do multisig está desenhado, não construído.
+3. **Cliente de GPU.** O worker atual é CPU e existe para definir o protocolo sem
+   ambiguidade.
+4. **Interface.** Barra de progresso, escolha de lotes, serviço em background.
+5. **Pagamento.** Nada aqui movimenta satoshi ainda.
 
-## Rodando
+## Contribuindo
 
-```bash
-export PUZZLEPOOL_SECRET="pelo menos 32 bytes, estável entre restarts"
+O projeto precisa de gente em coisas bem diferentes: kernel CUDA, empacotamento
+para os três sistemas, interface, e revisão do esquema de verificação. Essa
+última em especial: se você encontrar um jeito de passar na verificação sem
+varrer o lote, abra uma issue, é a contribuição mais valiosa possível aqui.
 
-go run ./cmd/coordinator \
-  -puzzle 71 \
-  -target-hash160 <40 hex do endereço alvo> \
-  -block-bits 40 \
-  -db pool.db -addr :8080
-```
+A pesquisa que originou o projeto, incluindo a análise das ferramentas existentes
+de busca no puzzle, está em [`docs/research/`](docs/research/).
 
-Em outro terminal:
+---
 
-```bash
-go run ./cmd/worker \
-  -server http://localhost:8080 -id alice \
-  -target-hash160 <mesmo alvo> -blocks 1
-```
+## Antes de participar
 
-O worker de referência é CPU pura e lento de propósito (~55 mil chaves/s por
-core). Ele existe para **definir o protocolo sem ambiguidade** e para dar a um
-worker de GPU algo contra o que fazer diff: aponte os dois para o mesmo bloco
-pequeno e as duas submissões têm que sair idênticas.
+**Isto é uma loteria.** A chance de achar é proporcional à fração do espaço que o
+pool varre, e ela começa perto de zero. As tabelas são valor esperado de longo
+prazo, não previsão. Você pode participar por um ano e não receber nada.
 
-Um worker de GPU só precisa reproduzir três comportamentos — ver
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+**A plataforma é confiável por escolha, não por criptografia.** Ela guarda o
+segredo dos canários, distribui os lotes e mantém o ledger. O ledger é aberto
+para você conferir os seus tickets, mas o pagamento depende dela cumprir o
+combinado.
 
-## Pesquisa anterior
+**Situação legal.** Distribuir prêmio entre participantes pode ser enquadrado
+como loteria, jogo, ou oferta de valores mobiliários dependendo do país. Quem
+operar precisa resolver isso com advogado antes de aceitar participantes. Isto
+não é orientação jurídica.
 
-Antes de escrever o coordenador, analisei as quatro ferramentas existentes de
-busca no puzzle — `btcgo`, `btcgoai`, `cacagpu` e `CUDACyclone`. Duas conclusões
-viraram decisão de projeto: **nenhuma sabe onde parou** (nenhuma tem checkpoint) e
-**nenhuma tem como provar que varreu** — todas confiam na própria execução, porque
-são ferramentas de um usuário só.
-
-Ver [`docs/research/`](docs/research/) para a análise completa, os bugs
-encontrados em cada uma, e o que este projeto reaproveita delas.
-
-## Arquitetura
-
-```
-internal/btc/          derivação HASH160 de referência (CPU)
-internal/keyspace/     range → blocos; tabela de blocos é esparsa, nunca materializada
-internal/proof/        testemunhas, canários, verificação, sweeper de referência
-internal/payout/       rateio exato em satoshis inteiros
-internal/store/        SQLite: campanhas, leases, tickets, soluções
-internal/coordinator/  alocação aleatória, verificação, API HTTP
-cmd/coordinator/       o servidor
-cmd/worker/            o participante de referência
-docs/PROTOCOL.md       o contrato worker <-> coordenador
-docs/research/         análise das ferramentas existentes e benchmarks medidos
-```
-
-**A tabela de blocos é esparsa de propósito.** Puzzle #71 com blocos de 2^40
-chaves tem 2^30 blocos; puzzles maiores são muito piores. Materializar uma linha
-por bloco é impossível. Então só existe linha depois que o bloco foi alugado, e
-"disponível" significa "não tem linha". A alocação sorteia um índice uniforme e
-deixa a primary key rejeitar a colisão — que para qualquer campanha real é
-astronomicamente rara. O custo de entregar um bloco não cresce com o tamanho da
-campanha.
-
-**A alocação é aleatória, não sequencial.** Isso não é detalhe de implementação:
-entrega sequencial deixaria o participante prever o próximo bloco e pré-computá-lo,
-e tornaria o progresso do pool trivialmente observável por um concorrente.
-
-## Modelo de confiança
-
-Escrito aqui porque quem entra num pool merece saber no que está entrando.
-
-**1. Quem encontra pode simplesmente não avisar.** É impossível impedir
-criptograficamente. O worker calcula a chave na própria máquina; nenhum protocolo
-tira isso dele. As defesas são econômicas, não matemáticas: os 50% para quem
-encontra existem justamente para que reportar seja a jogada racional, e o
-movimento das moedas é público — se o endereço do puzzle for gasto sem que
-ninguém reporte, o participante que tinha aquele bloco alugado é identificável.
-Isso é detecção posterior, não prevenção.
-
-**2. A plataforma é confiável, e isso é uma escolha.** Ela guarda o segredo dos
-canários, aloca os blocos e mantém o livro de tickets. Um participante precisa
-confiar que vai ser pago. Uma versão futura pode publicar o ledger de tickets ou
-mover o custódia para multisig; hoje, não.
-
-**3. O segredo do canário é crítico.** Quem o tiver prevê os canários de qualquer
-bloco e passa nesse teste sem varrer nada. Ele nunca pode chegar a um worker.
-Trocá-lo invalida todo lease em aberto.
-
-**4. Antes de aceitar dinheiro de terceiros, consulte um advogado.** Distribuir
-prêmio entre participantes pode ser enquadrado como loteria, jogo ou oferta de
-valores mobiliários dependendo da jurisdição. Isto não é aconselhamento jurídico
-— é um aviso de que a questão existe e é anterior ao código.
-
-**5. A aritmética continua brutal.** Mesmo com 10 mil GPUs de topo, #71 leva
-~163 dias e a chance de sucesso em qualquer janela é proporcional à fração do
-keyspace varrida. Nenhum participante deve entrar esperando retorno.
-
-## Estado
-
-Funciona ponta a ponta hoje: alugar bloco → varrer → provar → ticket → rateio,
-com verificação real e um teste que confirma que submissão forjada é rejeitada.
-
-| Verificado | |
-|---|---|
-| Varredura honesta aceita | ✅ |
-| Varredura de 90% rejeitada (buraco de cobertura) | ✅ |
-| Testemunhas fabricadas rejeitadas | ✅ |
-| Testemunhas duplicadas rejeitadas | ✅ |
-| Caminho de reporte quebrado rejeitado | ✅ |
-| Prêmio falso rejeitado | ✅ |
-| Lease expirado não pode ser resgatado | ✅ |
-| Bloco alheio não pode ser resgatado | ✅ |
-| Submissão dupla não gera dois tickets | ✅ |
-| Bloco varrido nunca é reentregue | ✅ |
-| Rateio fecha exatamente no prêmio | ✅ |
-
-Falta, em ordem de importância:
-
-1. **Autenticação de worker.** Hoje `worker_id` é auto-declarado — qualquer um
-   credita tickets em qualquer nome. Precisa de chave por participante e
-   assinatura na submissão. **Isto é bloqueante para qualquer campanha real.**
-2. **Stake e reputação.** Prova rejeitada hoje não custa nada ao participante;
-   dá para tentar até acertar. Falha em auditoria profunda deveria queimar stake.
-3. **Worker de GPU.** O de referência é 10.000× lento demais para uso sério. O
-   protocolo já está definido para portar `cacagpu` ou `CUDACyclone`.
-4. **Custódia e pagamento.** Não há nada aqui que mova satoshi nenhum.
-5. **Postgres.** SQLite serve um coordenador; não serve vários.
+**Sobre a busca em si.** O Bitcoin Puzzle foi criado para ser quebrado, os
+endereços são públicos e o dinheiro foi colocado lá como desafio aberto. Isso é
+diferente de atacar endereço de terceiro, que não tem nada de legítimo e não é o
+que este projeto faz nem apoia.
