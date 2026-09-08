@@ -49,7 +49,7 @@ func run() error {
 	var (
 		server = flag.String("server", "http://localhost:8080", "coordinator base URL")
 		id     = flag.String("id", "", "worker id (required)")
-		target = flag.String("target-hash160", "", "the campaign's target HASH160, 40 hex chars (required)")
+		target = flag.String("target-hash160", "", "the campaign's target HASH160, 40 hex chars; required only on an unblinded campaign")
 		blocks = flag.Int("blocks", 1, "how many blocks to sweep before exiting; 0 means run forever")
 	)
 	flag.Parse()
@@ -58,8 +58,8 @@ func run() error {
 	if *id == "" {
 		return errors.New("-id is required: tickets are credited to it")
 	}
-	if len(*target) != 40 {
-		return errors.New("-target-hash160 is required: it is what tells a jackpot hit apart from a canary")
+	if *target != "" && len(*target) != 40 {
+		return fmt.Errorf("-target-hash160 must be 40 hex chars, got %d", len(*target))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -87,42 +87,74 @@ func sweepOne(ctx context.Context, client *http.Client, server, workerID, target
 		return fmt.Errorf("lease: %w", err)
 	}
 
-	lo, ok := new(big.Int).SetString(lease.LoKeyHex, 16)
+	length, ok := new(big.Int).SetString(lease.Length, 10)
 	if !ok {
-		return fmt.Errorf("lease returned an unparseable start key %q", lease.LoKeyHex)
-	}
-	hi, ok := new(big.Int).SetString(lease.HiKeyHex, 16)
-	if !ok {
-		return fmt.Errorf("lease returned an unparseable end key %q", lease.HiKeyHex)
-	}
-	length := new(big.Int).Sub(hi, lo)
-	length.Add(length, big.NewInt(1))
-	blk := keyspace.Block{Index: lease.BlockIndex, Lo: lo, Hi: hi, Len: length}
-
-	log.Info("leased block",
-		"index", blk.Index, "keys", blk.Len.String(),
-		"witness_bits", lease.Params.WitnessBits,
-		"expires_in", time.Until(time.Unix(lease.ExpiresAt, 0)).Round(time.Second))
-
-	// The coordinator shuffles the watchlist, so the worker is told separately
-	// which entry is the real target. For a public puzzle this is not a secret,
-	// and pretending otherwise would only hide it from honest workers — see the
-	// trust model in the README. The coordinator re-derives it during
-	// verification anyway, so a worker configured with the wrong target loses a
-	// find to nobody.
-	sweeper, err := proof.NewSweeper(lease.Params, targetHash160, lease.Watchlist)
-	if err != nil {
-		return err
+		return fmt.Errorf("lease returned an unparseable length %q", lease.Length)
 	}
 
-	start := time.Now()
-	sub, err := sweeper.Sweep(ctx, blk)
-	if err != nil {
-		return fmt.Errorf("sweep: %w", err)
+	var (
+		sweeper *proof.Sweeper
+		sub     proof.Submission
+		start   time.Time
+		err     error
+	)
+
+	if lease.Lot != nil {
+		// Blinded campaign: the lot arrives as a curve point and this process
+		// never holds a private key. There is nothing here to steal, nothing in
+		// a core dump, and nothing a modified build could keep without first
+		// running a discrete log it was not given the means to run.
+		log.Info("leased blind lot",
+			"keys", lease.Length, "witness_bits", lease.Params.WitnessBits,
+			"expires_in", time.Until(time.Unix(lease.ExpiresAt, 0)).Round(time.Second))
+
+		if sweeper, err = proof.NewBlindSweeper(lease.Params, lease.Watchlist); err != nil {
+			return err
+		}
+		start = time.Now()
+		if sub, err = sweeper.SweepLot(ctx, *lease.Lot); err != nil {
+			return fmt.Errorf("sweep: %w", err)
+		}
+	} else {
+		lo, ok := new(big.Int).SetString(lease.LoKeyHex, 16)
+		if !ok {
+			return fmt.Errorf("lease returned an unparseable start key %q", lease.LoKeyHex)
+		}
+		hi, ok := new(big.Int).SetString(lease.HiKeyHex, 16)
+		if !ok {
+			return fmt.Errorf("lease returned an unparseable end key %q", lease.HiKeyHex)
+		}
+		if targetHash160 == "" {
+			return errors.New("-target-hash160 is required on an unblinded campaign: it is what tells a jackpot hit apart from a canary")
+		}
+		blk := keyspace.Block{Lo: lo, Hi: hi, Len: length}
+		if lease.BlockIndex != nil {
+			blk.Index = *lease.BlockIndex
+		}
+
+		log.Info("leased block",
+			"index", blk.Index, "keys", blk.Len.String(),
+			"witness_bits", lease.Params.WitnessBits,
+			"expires_in", time.Until(time.Unix(lease.ExpiresAt, 0)).Round(time.Second))
+
+		// The coordinator shuffles the watchlist, so the worker is told
+		// separately which entry is the real target. For a public puzzle this is
+		// not a secret, and pretending otherwise would only hide it from honest
+		// workers — see the trust model in the README. The coordinator
+		// re-derives it during verification anyway, so a worker configured with
+		// the wrong target loses a find to nobody.
+		if sweeper, err = proof.NewSweeper(lease.Params, targetHash160, lease.Watchlist); err != nil {
+			return err
+		}
+		start = time.Now()
+		if sub, err = sweeper.Sweep(ctx, blk); err != nil {
+			return fmt.Errorf("sweep: %w", err)
+		}
+		sub.BlockIndex = blk.Index
 	}
 	elapsed := time.Since(start)
 
-	rate := new(big.Float).Quo(new(big.Float).SetInt(blk.Len), big.NewFloat(elapsed.Seconds()))
+	rate := new(big.Float).Quo(new(big.Float).SetInt(length), big.NewFloat(elapsed.Seconds()))
 	log.Info("swept",
 		"witnesses", len(sub.Witnesses), "canaries", len(sub.Canaries),
 		"elapsed", elapsed.Round(time.Millisecond), "keys_per_sec", rate.Text('f', 0))
@@ -139,11 +171,12 @@ func sweepOne(ctx context.Context, client *http.Client, server, workerID, target
 	if err := postJSON(ctx, client, server+"/v1/submit", body, &receipt); err != nil {
 		return fmt.Errorf("submit: %w", err)
 	}
-	log.Info("accepted", "block", receipt.BlockIndex, "ticket", receipt.TicketID,
+	log.Info("accepted", "ticket", receipt.TicketID,
 		"verified", receipt.Verified, "deep_audit", receipt.DeepAudit)
 
 	if receipt.Solved {
-		log.Warn("*** THIS BLOCK CONTAINED THE TARGET KEY ***", "block", receipt.BlockIndex)
+		log.Warn("*** THIS LOT CONTAINED THE TARGET KEY — the coordinator holds it; this machine never did ***",
+			"ticket", receipt.TicketID)
 	}
 	return nil
 }

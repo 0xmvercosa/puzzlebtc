@@ -89,6 +89,12 @@ CREATE TABLE IF NOT EXISTS blocks (
 -- Drives expired-lease reclamation without scanning completed blocks.
 CREATE INDEX IF NOT EXISTS blocks_by_expiry ON blocks(campaign_id, state, expires_at);
 CREATE INDEX IF NOT EXISTS blocks_by_worker ON blocks(campaign_id, worker_id, state);
+-- A blinded worker never learns its block index: knowing it would collapse the
+-- discrete log that protects the lot down to the tiling shift alone, which is
+-- only 2^33 wide and falls in about 2^17 operations. So a blinded worker
+-- addresses its lot by lease token, and this index is what makes that lookup
+-- cheap.
+CREATE INDEX IF NOT EXISTS blocks_by_token  ON blocks(campaign_id, lease_token);
 
 CREATE TABLE IF NOT EXISTS tickets (
   campaign_id TEXT    NOT NULL REFERENCES campaigns(id),
@@ -285,6 +291,28 @@ func (db *DB) TryLease(ctx context.Context, campaignID string, index uint64, wor
 //
 // The two writes must not be separable: a ticket without a completed block, or
 // a completed block without its ticket, both corrupt the payout ledger.
+// BlockByToken resolves a lease token to the block it was issued for.
+//
+// It exists for blinded campaigns, where the worker cannot be told its index and
+// so quotes the token instead. The worker id is returned with it: the token is a
+// bearer credential for one block, and the caller must check it is being
+// presented by the worker it was issued to.
+func (db *DB) BlockByToken(ctx context.Context, campaignID, token string) (index uint64, workerID string, err error) {
+	row := db.sql.QueryRowContext(ctx,
+		`SELECT block_index, worker_id FROM blocks WHERE campaign_id = ? AND lease_token = ?`,
+		campaignID, token)
+	if err := row.Scan(&index, &workerID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", ErrNoSuchLease
+		}
+		return 0, "", fmt.Errorf("store: block by token: %w", err)
+	}
+	return index, workerID, nil
+}
+
+// ErrNoSuchLease is returned when a lease token matches no block.
+var ErrNoSuchLease = errors.New("store: no block holds that lease token")
+
 func (db *DB) CompleteBlock(ctx context.Context, campaignID string, index uint64, workerID, token string, witnesses, keysSwept uint64, now time.Time) error {
 	tx, err := db.sql.BeginTx(ctx, nil)
 	if err != nil {

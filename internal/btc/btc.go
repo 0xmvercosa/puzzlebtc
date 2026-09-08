@@ -96,3 +96,33 @@ func Hash160ToAddress(h Hash160) string {
 	}
 	return string(out)
 }
+
+// PointHash160 derives the HASH160 of the compressed public key for an affine
+// curve point.
+//
+// The blind-lot protocol walks points directly — P, P+G, P+2G, ... — because a
+// worker that never holds a scalar cannot leak one. This is the hash step for
+// that walk; PubKeyHash160 is the same computation reached from the private key.
+// The two must agree exactly, and a test asserts it.
+func PointHash160(p *secp256k1.JacobianPoint) Hash160 {
+	q := *p
+	if !q.Z.IsOne() {
+		q.ToAffine()
+	}
+	var compressed [33]byte
+	compressed[0] = 0x02
+	if q.Y.IsOdd() {
+		compressed[0] = 0x03
+	}
+	var xb [32]byte
+	q.X.PutBytes(&xb)
+	copy(compressed[1:], xb[:])
+
+	sum := sha256.Sum256(compressed[:])
+	r := ripemd160.New()
+	_, _ = r.Write(sum[:])
+
+	var out Hash160
+	copy(out[:], r.Sum(nil))
+	return out
+}

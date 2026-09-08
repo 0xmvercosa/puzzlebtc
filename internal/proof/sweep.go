@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/0xmvercosa/puzzlebtc/internal/blind"
 	"github.com/0xmvercosa/puzzlebtc/internal/btc"
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
 )
@@ -32,6 +33,27 @@ func NewSweeper(p Params, targetHex string, watchlistHex []string) (*Sweeper, er
 		return nil, fmt.Errorf("proof: target: %w", err)
 	}
 	s := &Sweeper{Params: p, Target: target, Watchlist: make(map[btc.Hash160]struct{}, len(watchlistHex))}
+	for _, h := range watchlistHex {
+		v, err := parseHash160(h)
+		if err != nil {
+			return nil, fmt.Errorf("proof: watchlist: %w", err)
+		}
+		s.Watchlist[v] = struct{}{}
+	}
+	return s, nil
+}
+
+// NewBlindSweeper builds a sweeper for a blinded campaign, which is told the
+// watchlist but not which entry is the target.
+//
+// A blinded worker does not need to know: it reports every watchlist hit the
+// same way and the coordinator re-derives them, so a real find is recognized on
+// the server. Withholding the target from the client is not secrecy — the
+// puzzle address is public and a modified client can hardcode it — it is the
+// removal of a step the honest client no longer has to get right, and one fewer
+// place for a misconfigured worker to drop a prize.
+func NewBlindSweeper(p Params, watchlistHex []string) (*Sweeper, error) {
+	s := &Sweeper{Params: p, Watchlist: make(map[btc.Hash160]struct{}, len(watchlistHex))}
 	for _, h := range watchlistHex {
 		v, err := parseHash160(h)
 		if err != nil {
@@ -96,6 +118,58 @@ func (s *Sweeper) Sweep(ctx context.Context, blk keyspace.Block) (Submission, er
 		}
 
 		key.Add(key, one)
+	}
+	return sub, nil
+}
+
+// SweepLot walks a blinded lot and returns the submission for it.
+//
+// It is the same sweep as Sweep, driven by curve points instead of by private
+// keys: the worker starts at the lot's public start point and adds G once per
+// key. The offsets it reports mean exactly what they mean in Sweep, so the
+// coordinator verifies both the same way — the only difference is that this
+// worker never held a key and so has nothing to keep.
+//
+// This is also the faster of the two. Sweep derives a public key from scratch
+// for every offset; here each key costs one point addition, which is what every
+// real searcher does and what a GPU kernel batches.
+func (s *Sweeper) SweepLot(ctx context.Context, lot blind.Lot) (Submission, error) {
+	var sub Submission
+
+	length, ok := new(big.Int).SetString(lot.Length, 10)
+	if !ok || !length.IsUint64() {
+		return sub, fmt.Errorf("proof: lot length %q is not a usable count", lot.Length)
+	}
+	w, err := blind.NewWalker(lot.StartPoint)
+	if err != nil {
+		return sub, err
+	}
+
+	n := length.Uint64()
+	for off := uint64(0); off < n; off++ {
+		if off&0xFFFF == 0 {
+			select {
+			case <-ctx.Done():
+				return sub, ctx.Err()
+			default:
+			}
+		}
+
+		h := w.Hash160()
+
+		if h.LeadingZeroBits() >= s.Params.WitnessBits {
+			sub.Witnesses = append(sub.Witnesses, off)
+		}
+		if _, hit := s.Watchlist[h]; hit {
+			if h == s.Target {
+				o := off
+				sub.FoundOffset = &o
+			} else {
+				sub.Canaries = append(sub.Canaries, off)
+			}
+		}
+
+		w.Next()
 	}
 	return sub, nil
 }

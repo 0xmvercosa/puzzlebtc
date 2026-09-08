@@ -43,7 +43,11 @@ type Campaign struct {
 	Min, Max *big.Int
 	// BlockBits sets the block size to 2^BlockBits keys.
 	BlockBits uint
+	// Shift slides the tiling down by this many keys, so block 0 starts at
+	// Min-Shift. It must be less than the block size. Zero is the plain tiling.
+	Shift uint64
 
+	base      *big.Int
 	numBlocks *big.Int
 }
 
@@ -53,6 +57,16 @@ type Campaign struct {
 // truncated at Max. Workers learn each block's true length from the lease, so a
 // short tail block is proved on its real width, not padded.
 func NewCampaign(id string, puzzleNum int, targetHash160 string, min, max *big.Int, blockBits uint) (*Campaign, error) {
+	return NewShiftedCampaign(id, puzzleNum, targetHash160, min, max, blockBits, 0)
+}
+
+// NewShiftedCampaign is NewCampaign with the tiling slid down by shift keys.
+//
+// shift must be smaller than the block size, and the range must sit far enough
+// above zero that Min-shift is still a valid scalar. A campaign on a real puzzle
+// satisfies that by a margin of 2^37 or more; the check exists for the tiny
+// ranges used in tests.
+func NewShiftedCampaign(id string, puzzleNum int, targetHash160 string, min, max *big.Int, blockBits uint, shift uint64) (*Campaign, error) {
 	switch {
 	case strings.TrimSpace(id) == "":
 		return nil, errors.New("keyspace: campaign id is empty")
@@ -75,13 +89,24 @@ func NewCampaign(id string, puzzleNum int, targetHash160 string, min, max *big.I
 		Min:           new(big.Int).Set(min),
 		Max:           new(big.Int).Set(max),
 		BlockBits:     blockBits,
+		Shift:         shift,
 	}
 
-	// numBlocks = ceil(rangeLen / 2^blockBits), so the truncated tail still
-	// gets an index of its own instead of being dropped.
-	rangeLen := new(big.Int).Sub(c.Max, c.Min)
-	rangeLen.Add(rangeLen, big.NewInt(1))
 	size := c.BlockSize()
+	shiftBig := new(big.Int).SetUint64(shift)
+	if shiftBig.Cmp(size) >= 0 {
+		return nil, fmt.Errorf("keyspace: shift %d must be below the block size 2^%d", shift, blockBits)
+	}
+	c.base = new(big.Int).Sub(c.Min, shiftBig)
+	if c.base.Sign() <= 0 {
+		return nil, fmt.Errorf("keyspace: shift %d pushes the first block to %s, at or below zero; the range is too close to the bottom of the keyspace to be shifted", shift, c.base)
+	}
+
+	// numBlocks = ceil(coveredLen / 2^blockBits) where coveredLen spans from the
+	// shifted base to Max, so the truncated tail still gets an index of its own
+	// instead of being dropped.
+	rangeLen := new(big.Int).Sub(c.Max, c.base)
+	rangeLen.Add(rangeLen, big.NewInt(1))
 	n := new(big.Int).Add(rangeLen, new(big.Int).Sub(size, big.NewInt(1)))
 	n.Div(n, size)
 
@@ -105,6 +130,28 @@ func (c *Campaign) NumBlocks() *big.Int { return new(big.Int).Set(c.numBlocks) }
 // constructor rejects campaigns whose block count would not fit.
 func (c *Campaign) NumBlocksU64() uint64 { return c.numBlocks.Uint64() }
 
+// Base is the key the tiling starts at: Min-Shift. Blocks below Min and above
+// Max exist only at the two ends and cost at most one block of wasted work each.
+func (c *Campaign) Base() *big.Int { return new(big.Int).Set(c.base) }
+
+// BlockIndexOf reports which block covers key, and whether key is covered at all.
+//
+// This is what makes a swept prize attributable: the coordinator signed a lease
+// naming a worker for this index before anyone could have found the key, so a
+// key that surfaces on chain names the participant who was holding the ground it
+// sat on.
+func (c *Campaign) BlockIndexOf(key *big.Int) (uint64, bool) {
+	if key == nil || key.Cmp(c.base) < 0 || key.Cmp(c.Max) > 0 {
+		return 0, false
+	}
+	idx := new(big.Int).Sub(key, c.base)
+	idx.Div(idx, c.BlockSize())
+	if !idx.IsUint64() || idx.Cmp(c.numBlocks) >= 0 {
+		return 0, false
+	}
+	return idx.Uint64(), true
+}
+
 // Block is one leasable unit of work: a contiguous, half-open-at-the-top-in-
 // spirit but inclusive key interval, plus its length.
 type Block struct {
@@ -124,7 +171,7 @@ func (c *Campaign) BlockAt(index uint64) (Block, error) {
 	}
 	size := c.BlockSize()
 	lo := new(big.Int).Mul(size, new(big.Int).SetUint64(index))
-	lo.Add(lo, c.Min)
+	lo.Add(lo, c.base)
 
 	hi := new(big.Int).Add(lo, size)
 	hi.Sub(hi, big.NewInt(1))

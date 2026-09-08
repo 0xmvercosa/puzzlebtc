@@ -3,9 +3,12 @@
 //
 //	coordinator -puzzle 71 -db pool.db -addr :8080
 //
-// The canary secret must be supplied in PUZZLEPOOL_SECRET and must be stable
-// across restarts: it determines where canaries are planted in every block, so
-// changing it invalidates every outstanding lease.
+// The campaign secret must be supplied in PUZZLEPOOL_SECRET and must be stable
+// across restarts. It does two jobs: it determines where canaries are planted in
+// every block, and it fixes the tiling shift that makes blind lots worth
+// anything. Changing it invalidates every outstanding lease and re-aligns the
+// tiling, which would hand out ground that was already swept — so back it up
+// before the first lease, not after.
 package main
 
 import (
@@ -20,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0xmvercosa/puzzlebtc/internal/blind"
 	"github.com/0xmvercosa/puzzlebtc/internal/coordinator"
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
 	"github.com/0xmvercosa/puzzlebtc/internal/proof"
@@ -47,6 +51,7 @@ func run() error {
 		addr       = flag.String("addr", ":8080", "listen address")
 		leaseTTL   = flag.Duration("lease-ttl", 2*time.Hour, "how long a worker holds a block before it returns to the pool")
 		auditRate  = flag.Float64("deep-audit-rate", 0.02, "fraction of submissions verified in full rather than sampled")
+		unblinded  = flag.Bool("unblinded", false, "hand out key ranges instead of curve points; only for debugging a worker against a known block")
 	)
 	flag.Parse()
 
@@ -55,7 +60,7 @@ func run() error {
 
 	secret := os.Getenv(secretEnv)
 	if len(secret) < 32 {
-		return fmt.Errorf("%s must be set to at least 32 bytes; it seeds canary placement and must survive restarts", secretEnv)
+		return fmt.Errorf("%s must be set to at least 32 bytes; it seeds canary placement and the tiling shift, and must survive restarts", secretEnv)
 	}
 	if *targetHex == "" {
 		return errors.New("-target-hash160 is required: the coordinator will not guess what it is searching for")
@@ -69,7 +74,15 @@ func run() error {
 	if id == "" {
 		id = fmt.Sprintf("puzzle-%d", *puzzleNum)
 	}
-	campaign, err := keyspace.NewCampaign(id, *puzzleNum, *targetHex, min, max, *blockBits)
+	// The shift is what turns the blind lot from theatre into work: without it a
+	// worker recovers its lot's first key from the curve point with a
+	// baby-step/giant-step search over the block count, which is milliseconds.
+	// See internal/blind.
+	shift, err := blind.DeriveShift([]byte(secret), id, *blockBits)
+	if err != nil {
+		return err
+	}
+	campaign, err := keyspace.NewShiftedCampaign(id, *puzzleNum, *targetHex, min, max, *blockBits, shift)
 	if err != nil {
 		return err
 	}
@@ -87,6 +100,7 @@ func run() error {
 	cfg.LeaseTTL = *leaseTTL
 	cfg.DeepAuditRate = *auditRate
 	cfg.CanarySecret = []byte(secret)
+	cfg.Blind = !*unblinded
 
 	params := proof.DefaultParams(*blockBits)
 	co, err := coordinator.New(ctx, db, campaign, params, cfg)
@@ -102,7 +116,11 @@ func run() error {
 		"block_keys", campaign.BlockSize().String(),
 		"witness_bits", params.WitnessBits,
 		"expected_witnesses_per_block", int(params.ExpectedWitnesses(campaign.BlockSize())),
+		"blind", cfg.Blind,
 	)
+	if !cfg.Blind {
+		log.Warn("BLINDING IS OFF: workers receive private key ranges and can keep any prize they find without running a discrete log first")
+	}
 
 	srv := &http.Server{
 		Addr:              *addr,

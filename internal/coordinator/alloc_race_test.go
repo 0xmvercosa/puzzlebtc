@@ -32,10 +32,10 @@ func TestConcurrentLeasesAreRaceFree(t *testing.T) {
 					return
 				}
 				mu.Lock()
-				if prev, dup := seen[lease.BlockIndex]; dup {
-					t.Errorf("block %d leased to both %s and %s", lease.BlockIndex, prev, id)
+				if prev, dup := seen[leaseIndex(lease)]; dup {
+					t.Errorf("block %d leased to both %s and %s", leaseIndex(lease), prev, id)
 				}
-				seen[lease.BlockIndex] = id
+				seen[leaseIndex(lease)] = id
 				mu.Unlock()
 			}
 		}(w)

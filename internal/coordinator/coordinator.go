@@ -5,7 +5,9 @@ package coordinator
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +16,7 @@ import (
 	mrand "math/rand/v2"
 	"time"
 
+	"github.com/0xmvercosa/puzzlebtc/internal/blind"
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
 	"github.com/0xmvercosa/puzzlebtc/internal/payout"
 	"github.com/0xmvercosa/puzzlebtc/internal/proof"
@@ -53,6 +56,15 @@ type Config struct {
 	// too short and slow workers lose finished work, too long and a crashed
 	// worker parks a block for hours.
 	LeaseTTL time.Duration
+
+	// Blind hands lots out as curve points instead of key ranges, so a worker
+	// never holds the private keys it is sweeping and a modified client cannot
+	// simply keep the prize it stumbles on. It costs the worker nothing and the
+	// coordinator one scalar multiplication per lease. The campaign must have
+	// been built with a secret shift (see internal/blind) or the blinding is
+	// worthless: without it a worker recovers its lot start from the point in
+	// milliseconds.
+	Blind bool
 	// DeepAuditRate is the fraction of submissions verified in full rather than
 	// sampled, in [0,1]. Deep audits cost one curve operation per witness.
 	DeepAuditRate float64
@@ -171,15 +183,28 @@ func New(ctx context.Context, db *store.DB, c *keyspace.Campaign, p proof.Params
 func (co *Coordinator) Campaign() *keyspace.Campaign { return co.campaign }
 
 // Lease is what a worker receives when it asks for work.
+//
+// On a blinded campaign three of these fields are absent, and their absence is
+// the security property: BlockIndex, LoKeyHex and HiKeyHex are all ways of
+// naming where the lot sits, and a worker that knows where its lot sits can
+// derive the keys in it. Lot carries the curve point instead. See
+// internal/blind.
 type Lease struct {
-	CampaignID string       `json:"campaign_id"`
-	BlockIndex uint64       `json:"block_index"`
-	LoKeyHex   string       `json:"lo_key_hex"`
-	HiKeyHex   string       `json:"hi_key_hex"`
-	Length     string       `json:"length"`
-	Token      string       `json:"lease_token"`
-	ExpiresAt  int64        `json:"expires_at"`
-	Params     proof.Params `json:"proof_params"`
+	CampaignID string `json:"campaign_id"`
+	// BlockIndex is nil on a blinded campaign. Knowing it would reduce the
+	// discrete log that protects the lot to a search over the tiling shift
+	// alone — about 2^17 operations instead of 2^36.
+	BlockIndex *uint64 `json:"block_index,omitempty"`
+	// LoKeyHex and HiKeyHex are empty on a blinded campaign.
+	LoKeyHex string `json:"lo_key_hex,omitempty"`
+	HiKeyHex string `json:"hi_key_hex,omitempty"`
+	// Lot is set only on a blinded campaign: the lot's start point and length,
+	// with no key in it.
+	Lot       *blind.Lot   `json:"lot,omitempty"`
+	Length    string       `json:"length"`
+	Token     string       `json:"lease_token"`
+	ExpiresAt int64        `json:"expires_at"`
+	Params    proof.Params `json:"proof_params"`
 	// Watchlist is every HASH160 the worker must report a match on: the real
 	// target plus this block's canaries, shuffled.
 	Watchlist []string `json:"watchlist"`
@@ -359,18 +384,28 @@ func (co *Coordinator) buildLease(index uint64, token, tier string, now time.Tim
 	if err != nil {
 		return nil, err
 	}
-	return &Lease{
+	lease := &Lease{
 		CampaignID: co.campaign.ID,
-		BlockIndex: index,
-		LoKeyHex:   blk.Lo.Text(16),
-		HiKeyHex:   blk.Hi.Text(16),
 		Length:     blk.Len.String(),
 		Token:      token,
 		ExpiresAt:  now.Add(co.cfg.LeaseTTL).Unix(),
 		Params:     co.verifier.Params(),
 		Watchlist:  watchlist,
 		Tier:       tier,
-	}, nil
+	}
+	if co.cfg.Blind {
+		lot, err := blind.LotFor(blk)
+		if err != nil {
+			return nil, err
+		}
+		lease.Lot = &lot
+		return lease, nil
+	}
+	idx := index
+	lease.BlockIndex = &idx
+	lease.LoKeyHex = blk.Lo.Text(16)
+	lease.HiKeyHex = blk.Hi.Text(16)
+	return lease, nil
 }
 
 // mrandFloat is a package-level draw, safe for concurrent use.
@@ -386,11 +421,15 @@ func newToken() (string, error) {
 
 // Receipt is the coordinator's answer to an accepted submission.
 type Receipt struct {
-	BlockIndex uint64 `json:"block_index"`
-	Witnesses  uint64 `json:"witnesses"`
-	Verified   int    `json:"witnesses_verified"`
-	DeepAudit  bool   `json:"deep_audit"`
-	TicketID   string `json:"ticket_id"`
+	// BlockIndex is nil on a blinded campaign, for the same reason it is absent
+	// from the lease.
+	BlockIndex *uint64 `json:"block_index,omitempty"`
+	Witnesses  uint64  `json:"witnesses"`
+	Verified   int     `json:"witnesses_verified"`
+	DeepAudit  bool    `json:"deep_audit"`
+	// TicketID names the block, so on a blinded campaign it is an opaque handle
+	// the worker quotes back rather than a coordinate it can use.
+	TicketID string `json:"ticket_id"`
 	// Solved is true when this submission carried the winning key.
 	Solved bool `json:"solved"`
 }
@@ -408,7 +447,28 @@ func (co *Coordinator) Submit(ctx context.Context, workerID string, sub proof.Su
 	if sub.CampaignID != "" && sub.CampaignID != co.campaign.ID {
 		return nil, fmt.Errorf("coordinator: submission is for campaign %q, this is %q", sub.CampaignID, co.campaign.ID)
 	}
-	blk, err := co.campaign.BlockAt(sub.BlockIndex)
+	index := sub.BlockIndex
+	var err error
+	if co.cfg.Blind {
+		// A blinded worker was never told its index, so it quotes the lease
+		// token. The token is a bearer credential for exactly one block: it has
+		// to resolve, and it has to resolve to this worker, or a participant
+		// could claim a ticket for somebody else's work.
+		var holder string
+		index, holder, err = co.db.BlockByToken(ctx, co.campaign.ID, sub.LeaseToken)
+		if err != nil {
+			return nil, err
+		}
+		if holder != workerID {
+			return nil, fmt.Errorf("coordinator: lease token belongs to another worker")
+		}
+		// The token is the binding on a blinded campaign, so the index it
+		// resolves to is authoritative. Stamping it here keeps the verifier's
+		// block-agreement check meaningful on the unblinded path, where the
+		// worker does quote an index and quoting the wrong one is a real bug.
+		sub.BlockIndex = index
+	}
+	blk, err := co.campaign.BlockAt(index)
 	if err != nil {
 		return nil, err
 	}
@@ -426,25 +486,48 @@ func (co *Coordinator) Submit(ctx context.Context, workerID string, sub proof.Su
 	if !blk.Len.IsUint64() {
 		return nil, fmt.Errorf("coordinator: block %d has %s keys, too many to weight a ticket", blk.Index, blk.Len)
 	}
-	if err := co.db.CompleteBlock(ctx, co.campaign.ID, sub.BlockIndex, workerID, sub.LeaseToken, res.Witnesses, blk.Len.Uint64(), now); err != nil {
+	if err := co.db.CompleteBlock(ctx, co.campaign.ID, index, workerID, sub.LeaseToken, res.Witnesses, blk.Len.Uint64(), now); err != nil {
 		return nil, err
 	}
 
 	receipt := &Receipt{
-		BlockIndex: sub.BlockIndex,
-		Witnesses:  res.Witnesses,
-		Verified:   res.Verified,
-		DeepAudit:  deep,
-		TicketID:   fmt.Sprintf("%s/%d", co.campaign.ID, sub.BlockIndex),
+		Witnesses: res.Witnesses,
+		Verified:  res.Verified,
+		DeepAudit: deep,
+		TicketID:  co.ticketID(index),
+	}
+	if !co.cfg.Blind {
+		idx := index
+		receipt.BlockIndex = &idx
 	}
 
 	if res.TargetKey != nil {
-		if err := co.db.RecordSolution(ctx, co.campaign.ID, sub.BlockIndex, workerID, res.TargetKey.Text(16), now); err != nil {
+		if err := co.db.RecordSolution(ctx, co.campaign.ID, index, workerID, res.TargetKey.Text(16), now); err != nil {
 			return nil, err
 		}
 		receipt.Solved = true
 	}
 	return receipt, nil
+}
+
+// ticketID names a settled block in a form the worker can quote back.
+//
+// On a blinded campaign it is a keyed digest of the index rather than the index
+// itself, and that is not cosmetic. A worker that learns its block index knows
+// its lot starts at Base + index*BlockSize, which reduces the discrete log
+// protecting the lot from the width of the whole campaign to the width of the
+// tiling shift — for puzzle #71, from about 2^36 operations to about 2^17. The
+// index would have leaked here, in a display string, after being kept out of the
+// lease and out of the receipt.
+//
+// The coordinator's own tables are keyed by index, so nothing is lost operator-side.
+func (co *Coordinator) ticketID(index uint64) string {
+	if !co.cfg.Blind {
+		return fmt.Sprintf("%s/%d", co.campaign.ID, index)
+	}
+	m := hmac.New(sha256.New, co.cfg.CanarySecret)
+	fmt.Fprintf(m, "puzzlebtc/ticket/v1\x00%s\x00%d", co.campaign.ID, index)
+	return co.campaign.ID + "/" + hex.EncodeToString(m.Sum(nil)[:8])
 }
 
 // Progress reports how much of the campaign is done.

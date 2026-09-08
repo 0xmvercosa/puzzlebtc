@@ -133,7 +133,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	if receipt.Solved {
 		// Loud on purpose: this line is the only thing standing between a found
 		// key and an operator who never noticed.
-		s.log.Warn("SOLUTION FOUND", "worker", req.WorkerID, "campaign", s.co.Campaign().ID, "block", receipt.BlockIndex)
+		s.log.Warn("SOLUTION FOUND", "worker", req.WorkerID, "campaign", s.co.Campaign().ID, "ticket", receipt.TicketID)
 	}
 	writeJSON(w, http.StatusOK, receipt)
 }

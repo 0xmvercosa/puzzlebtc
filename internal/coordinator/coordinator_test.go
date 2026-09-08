@@ -66,7 +66,7 @@ func sweep(t *testing.T, co *Coordinator, l *Lease) proof.Submission {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blk, err := co.Campaign().BlockAt(l.BlockIndex)
+	blk, err := co.Campaign().BlockAt(leaseIndex(l))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestLeaseSweepSubmitAwardsTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("honest submission rejected: %v", err)
 	}
-	t.Logf("block %d accepted: %d witnesses, %d verified", receipt.BlockIndex, receipt.Witnesses, receipt.Verified)
+	t.Logf("block %s accepted: %d witnesses, %d verified", receipt.TicketID, receipt.Witnesses, receipt.Verified)
 
 	prog, err := co.Progress(ctx)
 	if err != nil {
@@ -118,10 +118,10 @@ func TestBlocksAreNeverReissued(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if seen[lease.BlockIndex] {
-			t.Fatalf("block %d was leased twice while still outstanding", lease.BlockIndex)
+		if seen[leaseIndex(lease)] {
+			t.Fatalf("block %d was leased twice while still outstanding", leaseIndex(lease))
 		}
-		seen[lease.BlockIndex] = true
+		seen[leaseIndex(lease)] = true
 	}
 }
 
@@ -137,7 +137,7 @@ func TestAllocationIsRandom(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		indices = append(indices, l.BlockIndex)
+		indices = append(indices, leaseIndex(l))
 	}
 	sequential := true
 	for i := 1; i < len(indices); i++ {
@@ -160,13 +160,13 @@ func TestCheaterGetsNoTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blk, err := co.Campaign().BlockAt(lease.BlockIndex)
+	blk, err := co.Campaign().BlockAt(leaseIndex(lease))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Well-spread, plausible-looking, entirely invented.
-	fake := proof.Submission{CampaignID: lease.CampaignID, BlockIndex: lease.BlockIndex, LeaseToken: lease.Token}
+	fake := proof.Submission{CampaignID: lease.CampaignID, BlockIndex: leaseIndex(lease), LeaseToken: lease.Token}
 	for off := uint64(0); off < blk.Len.Uint64(); off += 12 {
 		fake.Witnesses = append(fake.Witnesses, off)
 	}
@@ -289,7 +289,7 @@ func TestSolutionRecordedAndPaidOut(t *testing.T) {
 	if err != nil || taken {
 		t.Fatalf("could not lease block 0: taken=%v err=%v", taken, err)
 	}
-	lease := &Lease{CampaignID: co.Campaign().ID, BlockIndex: 0, Token: token, Params: co.verifier.Params(), Watchlist: wl}
+	lease := &Lease{CampaignID: co.Campaign().ID, BlockIndex: new(uint64), Token: token, Params: co.verifier.Params(), Watchlist: wl}
 
 	receipt, err := co.Submit(ctx, "finder", sweep(t, co, lease))
 	if err != nil {
@@ -330,10 +330,10 @@ func TestLeaseBatchReturnsDistinctBlocks(t *testing.T) {
 	seen := map[uint64]bool{}
 	tokens := map[string]bool{}
 	for _, l := range leases {
-		if seen[l.BlockIndex] {
-			t.Errorf("block %d appears twice in one batch", l.BlockIndex)
+		if seen[leaseIndex(l)] {
+			t.Errorf("block %d appears twice in one batch", leaseIndex(l))
 		}
-		seen[l.BlockIndex] = true
+		seen[leaseIndex(l)] = true
 		if tokens[l.Token] {
 			t.Errorf("lease token reused across blocks")
 		}
@@ -346,8 +346,8 @@ func TestLeaseBatchReturnsDistinctBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, l := range more {
-		if seen[l.BlockIndex] {
-			t.Errorf("block %d handed out in two batches", l.BlockIndex)
+		if seen[leaseIndex(l)] {
+			t.Errorf("block %d handed out in two batches", leaseIndex(l))
 		}
 	}
 }
@@ -375,7 +375,7 @@ func TestBatchedBlocksAreIndividuallyRedeemable(t *testing.T) {
 	}
 	for _, l := range leases {
 		if _, err := co.Submit(ctx, "rig", sweep(t, co, l)); err != nil {
-			t.Fatalf("block %d: %v", l.BlockIndex, err)
+			t.Fatalf("block %d: %v", leaseIndex(l), err)
 		}
 	}
 	prog, err := co.Progress(ctx)
@@ -385,4 +385,14 @@ func TestBatchedBlocksAreIndividuallyRedeemable(t *testing.T) {
 	if prog.CompletedBlocks != 3 || prog.Tickets != 3 {
 		t.Errorf("progress = %d blocks / %d tickets, want 3/3", prog.CompletedBlocks, prog.Tickets)
 	}
+}
+
+// leaseIndex reads the block index a lease carries. It is deliberately absent on
+// a blinded campaign — see Lease — so a nil here means a test built for the
+// unblinded path is running against a blinded coordinator.
+func leaseIndex(l *Lease) uint64 {
+	if l.BlockIndex == nil {
+		panic("lease carries no block index: this test needs an unblinded campaign")
+	}
+	return *l.BlockIndex
 }
