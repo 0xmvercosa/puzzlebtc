@@ -1,0 +1,9 @@
+# Build output
+/coordinator
+/worker
+*.exe
+
+# Local databases and their WAL sidecars
+*.db
+*.db-shm
+*.db-wal
