@@ -40,14 +40,42 @@ Os puzzles #67, #68, #69, #70 e #135 já foram resolvidos. Isso deixa:
 A métrica útil é operações por dólar de prêmio: quanto trabalho custa cada dólar
 que se pode ganhar. Menor é melhor.
 
-| alvo | algoritmo | operações | prêmio | ops por dólar | 1.000 placas |
-|---|---|---|---|---|---|
-| **#140** | **kangaroo** | 1,67 × 10²¹ | **US$ 1,12 mi** | **1,49 × 10¹⁵** | 8,5 anos |
-| #71 | força bruta | 1,18 × 10²¹ | US$ 568 mil | 2,08 × 10¹⁵ | 6,0 anos |
-| #72 | força bruta | 2,36 × 10²¹ | US$ 576 mil | 4,10 × 10¹⁵ | 12 anos |
-| #73 | força bruta | 4,72 × 10²¹ | US$ 584 mil | 8,09 × 10¹⁵ | 24 anos |
-| #145 | kangaroo | 9,44 × 10²¹ | US$ 1,16 mi | 8,14 × 10¹⁵ | 48 anos |
-| #150 | kangaroo | 5,34 × 10²² | US$ 1,20 mi | 4,45 × 10¹⁶ | 273 anos |
+| alvo | algoritmo | operações | prêmio | ops por dólar |
+|---|---|---|---|---|
+| **#140** | **kangaroo** | 1,67 × 10²¹ | **US$ 1,12 mi** | **1,49 × 10¹⁵** |
+| #71 | força bruta | 1,18 × 10²¹ | US$ 568 mil | 2,08 × 10¹⁵ |
+| #72 | força bruta | 2,36 × 10²¹ | US$ 576 mil | 4,10 × 10¹⁵ |
+| #73 | força bruta | 4,72 × 10²¹ | US$ 584 mil | 8,09 × 10¹⁵ |
+| #145 | kangaroo | 9,44 × 10²¹ | US$ 1,16 mi | 8,14 × 10¹⁵ |
+| #150 | kangaroo | 5,34 × 10²² | US$ 1,20 mi | 4,45 × 10¹⁶ |
+
+### Tempo até resolver, por tamanho de pool
+
+Placas topo de linha, equivalentes a uma RTX 4090 a 6,2 Gchaves/s:
+
+| alvo | 1.000 placas | 10.000 placas | 50.000 placas |
+|---|---|---|---|
+| **#140 kangaroo** | 8,5 anos | **10 meses** | **2,0 meses** |
+| #71 força bruta | 6,0 anos | 7,2 meses | 1,4 mês |
+| #72 força bruta | 12 anos | 1,2 ano | 2,9 meses |
+| #73 força bruta | 24 anos | 2,4 anos | 5,8 meses |
+| #145 kangaroo | 48 anos | 4,8 anos | 11,6 meses |
+| #150 kangaroo | 273 anos | 27 anos | 5,5 anos |
+
+Um pool real não é feito só de placa topo de linha. Com placas intermediárias,
+equivalentes a uma RTX 4060 a 1,24 Gchaves/s, os mesmos alvos ficam cinco vezes
+mais lentos:
+
+| alvo | 1.000 placas | 10.000 placas | 50.000 placas |
+|---|---|---|---|
+| **#140 kangaroo** | 43 anos | 4,3 anos | **10 meses** |
+| #71 força bruta | 30 anos | 3,0 anos | 7,3 meses |
+| #72 força bruta | 60 anos | 6,0 anos | 1,2 ano |
+| #145 kangaroo | 242 anos | 24 anos | 4,8 anos |
+
+A leitura prática: **abaixo de mil placas nenhum alvo aberto sai em tempo
+razoável.** A escala em que o projeto começa a fazer sentido é dez mil placas, e
+é aí que #140 e #71 passam a resolver dentro de um ano.
 
 **O #140 é o melhor alvo aberto.** Paga o dobro do #71 por 1,41 vez o trabalho, o
 que dá 1,39 vez mais retorno por operação. Em números absolutos:

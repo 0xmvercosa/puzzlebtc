@@ -238,14 +238,20 @@ raiz quadrada do trabalho. No #140 isso é 4 × 10²⁰ vezes menos operações.
 
 Como #67 até #70 e o #135 já foram resolvidos, sobram estes alvos:
 
-| alvo | algoritmo | operações | prêmio | 1.000 placas |
-|---|---|---|---|---|
-| **#140** | **kangaroo** | 1,67 × 10²¹ | **US$ 1,12 mi** | 8,5 anos |
-| #71 | força bruta | 1,18 × 10²¹ | US$ 568 mil | 6,0 anos |
-| #72 | força bruta | 2,36 × 10²¹ | US$ 576 mil | 12 anos |
+| alvo | algoritmo | prêmio | 1.000 placas | 10.000 placas | 50.000 placas |
+|---|---|---|---|---|---|
+| **#140** | **kangaroo** | **US$ 1,12 mi** | 8,5 anos | **10 meses** | **2,0 meses** |
+| #71 | força bruta | US$ 568 mil | 6,0 anos | 7,2 meses | 1,4 mês |
+| #72 | força bruta | US$ 576 mil | 12 anos | 1,2 ano | 2,9 meses |
 
 **O #140 é o melhor alvo aberto:** dobro do prêmio por 1,41 vez o trabalho, o que
-dá 1,39 vez mais retorno por operação. Com 5.000 placas ele sai em 1,7 ano.
+dá 1,39 vez mais retorno por operação.
+
+Os tempos acima assumem placas topo de linha. Com placas intermediárias multiplique
+por cinco: o #140 com dez mil delas sai em 4,3 anos, e com cinquenta mil em dez
+meses. A leitura que importa é a mesma nos dois casos: **abaixo de mil placas
+nenhum alvo aberto sai em tempo razoável, e é em dez mil que o projeto começa a
+resolver dentro de um ano.**
 
 O plano é lançar no #71, que é o que o motor atual faz, e migrar para o #140
 assim que o kangaroo existir. A análise completa está em
