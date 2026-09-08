@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS tickets (
   campaign_id TEXT    NOT NULL REFERENCES campaigns(id),
   block_index INTEGER NOT NULL,
   worker_id   TEXT    NOT NULL,
+  -- Blocks are all the same size, so this is the same number on almost every
+  -- row. It is stored anyway because the LAST block of a campaign is truncated
+  -- at the range end and covers less ground than the others. Paying per key
+  -- rather than per row keeps that final block worth exactly what it covered.
+  keys_swept  INTEGER NOT NULL,
   awarded_at  INTEGER NOT NULL,
   -- One ticket per block for all time. Even if a block were somehow reissued
   -- and completed twice, it can never mint a second ticket.
@@ -191,7 +196,7 @@ func (db *DB) TryLease(ctx context.Context, campaignID string, index uint64, wor
 //
 // The two writes must not be separable: a ticket without a completed block, or
 // a completed block without its ticket, both corrupt the payout ledger.
-func (db *DB) CompleteBlock(ctx context.Context, campaignID string, index uint64, workerID, token string, witnesses uint64, now time.Time) error {
+func (db *DB) CompleteBlock(ctx context.Context, campaignID string, index uint64, workerID, token string, witnesses, keysSwept uint64, now time.Time) error {
 	tx, err := db.sql.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
@@ -212,10 +217,10 @@ func (db *DB) CompleteBlock(ctx context.Context, campaignID string, index uint64
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO tickets (campaign_id, block_index, worker_id, awarded_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO tickets (campaign_id, block_index, worker_id, keys_swept, awarded_at)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(campaign_id, block_index) DO NOTHING`,
-		campaignID, int64(index), workerID, now.Unix()); err != nil {
+		campaignID, int64(index), workerID, int64(keysSwept), now.Unix()); err != nil {
 		return fmt.Errorf("store: award ticket for block %d: %w", index, err)
 	}
 	return tx.Commit()
@@ -268,17 +273,20 @@ func (db *DB) Stats(ctx context.Context, campaignID string) (Stats, error) {
 	return s, nil
 }
 
-// TicketHolder is one worker's verified ticket count.
+// TicketHolder is one worker's verified contribution: how many blocks they
+// closed, and the total keys those blocks covered. Weight is what the payout
+// divides by; Blocks is for display.
 type TicketHolder struct {
 	WorkerID string
-	Tickets  int64
+	Blocks   int64
+	Weight   int64 // total keys swept
 }
 
 // TicketHolders lists every worker with at least one ticket, ordered by ID so
 // the payout computation is reproducible.
 func (db *DB) TicketHolders(ctx context.Context, campaignID string) ([]TicketHolder, error) {
 	rows, err := db.sql.QueryContext(ctx, `
-		SELECT worker_id, COUNT(*) FROM tickets WHERE campaign_id = ?
+		SELECT worker_id, COUNT(*), COALESCE(SUM(keys_swept), 0) FROM tickets WHERE campaign_id = ?
 		GROUP BY worker_id ORDER BY worker_id`, campaignID)
 	if err != nil {
 		return nil, fmt.Errorf("store: ticket holders: %w", err)
@@ -288,7 +296,7 @@ func (db *DB) TicketHolders(ctx context.Context, campaignID string) ([]TicketHol
 	var out []TicketHolder
 	for rows.Next() {
 		var h TicketHolder
-		if err := rows.Scan(&h.WorkerID, &h.Tickets); err != nil {
+		if err := rows.Scan(&h.WorkerID, &h.Blocks, &h.Weight); err != nil {
 			return nil, fmt.Errorf("store: scan ticket holder: %w", err)
 		}
 		out = append(out, h)

@@ -141,13 +141,26 @@ antes de ligar a máquina.
 
 Puzzle #67 tem 2⁶⁶ ≈ 7,4 × 10¹⁹ chaves. Fração varrida por ano:
 
-| pool | chaves/s agregado | espaço por ano | tempo até 50% |
-|---|---|---|---|
-| 100 GPUs médias | 1,2 × 10¹¹ | 0,005% | ~9.700 anos |
-| 1.000 GPUs médias | 1,2 × 10¹² | 0,05% | ~970 anos |
-| 1.000 GPUs + 50 rigs | 3,1 × 10¹² | 0,13% | ~380 anos |
+> **Correção.** Uma versão anterior deste documento dizia que 1.000 GPUs médias
+> cobriam 0,05% do espaço do #67 por ano. O valor correto é 52,9%: um erro de
+> fator mil, que invertia a conclusão. A tabela abaixo está refeita.
 
-Nenhum pool realista esgota o espaço. O que o pool faz é comprar bilhetes: cada
-chave varrida é uma chance, e o valor esperado por chave é o que está na tabela
-acima. Achar cedo é sorte, e sorte acontece — vários puzzles foram resolvidos com
-uma fração pequena do espaço varrida.
+Fração do espaço coberta por ano, com GPUs de 1,24 Gchaves/s:
+
+| campanha | 100 placas | 1.000 placas | 10.000 placas |
+|---|---|---|---|
+| #67 | 5,3% | 52,9% | espaço inteiro em 10 meses |
+| #69 | 1,3% | 13,2% | espaço inteiro em 9 meses |
+| #71 | 0,3% | 3,3% | 33% |
+| #72 | 0,2% | 1,7% | 17% |
+| #75 | 0,02% | 0,2% | 2,1% |
+| #140 | ~0% | ~0% | ~0% |
+
+Isso muda a leitura do projeto. Um pool de mil placas numa campanha de puzzle
+baixo não está comprando bilhete de loteria remoto: está cobrindo metade do
+espaço por ano. É a diferença entre "provavelmente nunca" e "provavelmente em
+poucos anos".
+
+Nas campanhas altas a conta volta a ser loteria, e cada degrau de puzzle corta a
+cobertura pela metade. Por isso a escolha do alvo pesa mais que qualquer outra
+variável do projeto.

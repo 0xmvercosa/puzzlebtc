@@ -103,48 +103,93 @@ nível, nem vantagem para quem chegou antes.
 
 ## As contas
 
-Vale saber no que você está entrando antes de ligar a máquina. Os números abaixo
-usam **BTC = US$ 80.000**; ajuste proporcionalmente se o preço mudar.
+**Você não recebe nada a menos que o pool encontre a chave.** Não é rendimento,
+não acumula saldo, não tem pagamento periódico. É bilhete de loteria: varrer
+compra chance, e a chance só vira dinheiro se a busca do pool acertar antes de
+qualquer outra pessoa no mundo. Se um pesquisador solitário ou outro pool achar
+primeiro, a campanha acaba e ninguém aqui recebe.
 
-A chave está em posição aleatória dentro do espaço, então varrer uma fração dele
-dá exatamente essa fração de chance de achar:
+Com isso claro, dá para dimensionar quanta chance cada máquina compra. Valores
+com **BTC = US$ 80.000**; ajuste proporcionalmente se o preço mudar.
+
+### Quanto vale um lote
+
+Um lote são 2³⁹ chaves, cerca de 550 bilhões. A chave está em posição aleatória
+no espaço, então cada lote varrido é uma fatia dessa loteria:
 
 ```
-retorno esperado = 0,70 × prêmio × (suas chaves ÷ tamanho do espaço)
+valor esperado = 0,70 × prêmio × (lotes seus ÷ lotes totais da campanha)
 ```
 
-O 0,70 é a sua fatia possível: 50% se for você quem acha, mais 20% de rateio.
+O 0,70 é a sua fatia possível: 50% se for você quem acha, mais 20% de rateio
+entre quem ajudou.
 
-Campanha do puzzle #67, prêmio de aproximadamente 6,7 BTC:
+Campanha do puzzle #71, prêmio de 7,1 BTC (US$ 568.000), com 2 bilhões de lotes
+no total:
 
-| hardware | chaves por dia | retorno esperado/dia |
-|---|---|---|
-| CPU 4 núcleos | 1,8 × 10¹¹ | US$ 0,001 |
-| RTX 4060 | 1,1 × 10¹⁴ | US$ 0,54 |
-| RTX 4090 | 5,4 × 10¹⁴ | US$ 2,73 |
-| Rig 6× 4090 | 3,2 × 10¹⁵ | US$ 16,38 |
+| sua máquina | lotes por dia | por dia | por mês | por ano |
+|---|---|---|---|---|
+| GTX 1660 / RTX 3050 | 100 | US$ 0,019 | US$ 0,57 | US$ 6,90 |
+| RTX 4060 | 195 | US$ 0,036 | US$ 1,08 | US$ 13,15 |
+| RTX 4090 | 975 | US$ 0,181 | US$ 5,42 | US$ 66,00 |
+| Rig com 6 placas | 5.860 | US$ 1,085 | US$ 32,55 | US$ 396,00 |
 
-Retorno esperado é média de longo prazo, não pagamento periódico. Você acumula
-participação e recebe quando o pool encontrar. Pode passar um ano sem receber
-nada.
+Em BTC, um ano de RTX 4090 nessa campanha vale 0,000825 BTC de valor esperado.
 
-**A escolha da campanha é o que mais pesa.** Cada puzzle a mais dobra o espaço e o
-prêmio quase não muda, então o retorno por chave cai pela metade a cada degrau.
-Uma RTX 4090 rende US$ 2,73/dia no #67, US$ 0,70 no #69 e US$ 0,18 no #71. Por
-isso o pool mira sempre o menor puzzle ainda aberto, e a campanha ativa fica
-visível antes de você instalar qualquer coisa.
+Números pequenos, e é assim mesmo: é o preço de um bilhete numa loteria de meio
+milhão de dólares. O que muda a conta não é a sua máquina, é a campanha.
 
-Em CPU o retorno é desprezível em qualquer campanha. Ela serve para testar a
-instalação e para acompanhar o projeto, não como forma de ganhar dinheiro.
+### Escolhendo a campanha
 
-O seu retorno por chave não muda com o tamanho do pool, porque a sua fatia é
-proporcional ao seu trabalho. Mais participantes aumentam a frequência com que o
-pool encontra alguma coisa e diminuem o tempo de espera, mas não dividem o seu
-bolo.
+Cada puzzle a mais **dobra** o espaço de busca, e o prêmio quase não muda. O
+valor de cada lote cai pela metade a cada degrau:
 
-Metodologia e as medições em [`docs/research/benchmarks.md`](docs/research/benchmarks.md).
+| campanha | espaço | prêmio | valor de 1 lote | um ano de RTX 4090 |
+|---|---|---|---|---|
+| puzzle #71 | 2⁷⁰ | 7,1 BTC | US$ 0,00025 | US$ 66,00 |
+| puzzle #72 | 2⁷¹ | 7,2 BTC | US$ 0,00013 | US$ 33,46 |
+| puzzle #140 | 2¹³⁹ | 14,0 BTC | US$ 0,0000000000000000002 | US$ 0,00 |
 
----
+O #140 está na tabela para deixar claro que ele não é opção. O prêmio é o dobro,
+mas o espaço é 10²⁰ vezes maior. Um rig inteiro rodando um século ali tem valor
+esperado que arredonda para zero em qualquer moeda. Puzzle alto não é aposta
+ousada, é aposta sem bilhete.
+
+**A regra do pool é mirar o menor puzzle ainda aberto.** É onde cada lote vale
+mais, e a diferença entre um degrau e outro é maior que qualquer upgrade de
+hardware que você possa comprar.
+
+### Quanto o pool consegue cobrir
+
+Aqui está o motivo de existir um pool, e o motivo de chamar mais gente:
+
+| campanha | 100 placas | 1.000 placas | 10.000 placas |
+|---|---|---|---|
+| puzzle #71 | 0,3% ao ano | 3,3% ao ano | 33% ao ano |
+| puzzle #72 | 0,2% ao ano | 1,7% ao ano | 17% ao ano |
+
+Uma placa sozinha cobre 0,0003% do #71 em um ano. Mil placas cobrem 3,3%, o que
+já é uma chance de uma em trinta por ano. Dez mil cobrem um terço do espaço
+inteiro em doze meses.
+
+E é por isso que trazer gente é do seu interesse direto: **o seu valor por lote
+não muda com o tamanho do pool**, porque a sua fatia é proporcional ao seu
+trabalho. O que muda é a probabilidade de o prêmio sair para dentro do pool em
+vez de para um concorrente de fora. Mais gente aqui não divide o seu bolo, e
+aumenta a chance de existir bolo.
+
+### Progresso
+
+O painel mostra quantos lotes o pool já fechou, que fração do espaço isso
+representa, e quantos participantes estão ativos. Todo lote fechado tem prova
+verificada por trás, então esse número é auditável, ao contrário de qualquer
+alegação de varredura por aí.
+
+A fração vai começar próxima de zero e subir devagar. É informação honesta, não
+barra de progresso de instalador: o valor está em cada lote ser uma chance real,
+não em chegar a cem por cento.
+
+Metodologia e medições em [`docs/research/benchmarks.md`](docs/research/benchmarks.md).
 
 ## Como o prêmio é resgatado
 
@@ -153,24 +198,51 @@ para impedir por criptografia: quem varre o lote calcula a chave na própria
 máquina e nenhum protocolo tira ela de lá.
 
 O que dá para fazer é encurtar a janela até quase zero. Ao encontrar a chave, e
-antes de mostrar qualquer coisa na tela, o cliente monta uma transação levando o
-prêmio para um endereço multisig 2-de-3 publicado neste repositório, assina,
-transmite para vários nós, e só então reporta ao coordenador. São milissegundos
-entre achar e travar. O endereço de resgate está no código, então qualquer pessoa
-confere para onde o dinheiro vai antes de instalar. A distribuição sai do
-multisig conforme as regras publicadas, com ledger aberto.
+antes de mostrar qualquer coisa na tela, o cliente monta a transação de resgate,
+assina, e envia. O endereço de destino está no código deste repositório: qualquer
+pessoa confere para onde o dinheiro vai antes de instalar. A distribuição sai
+dali conforme o rateio publicado, com ledger aberto.
 
-Onde isso ainda falha, e vale dizer com todas as letras:
+### O ataque da mempool, e por que ele decide o desenho
 
-- **Cliente modificado.** Quem alterar o código para não transmitir consegue
-  ficar com tudo. Contra isso: builds reproduzíveis e releases assinados, para
-  conferir que o binário bate com o código; e o registro público de quem estava
-  com cada lote. Os endereços do puzzle estão entre os mais observados do
-  Bitcoin, então moeda que se mova sem ninguém reportar identifica na hora quem
-  tinha aquele lote.
-- **Os donos do multisig podem conluiar.** Por isso 2-de-3 com uma parte
-  independente, regras publicadas antes de qualquer campanha começar, e ledger
-  aberto.
+Transmitir a transação de resgate pela rede normal perde o prêmio, e o motivo é
+específico deste tipo de endereço.
+
+A assinatura de uma transação **expõe a chave pública** de quem assinou. Com a
+chave pública conhecida e o intervalo do puzzle sendo de 2⁶⁶, o algoritmo
+kangaroo do Pollard recupera a chave privada em cerca de 2³³ operações, o que é
+questão de segundos numa GPU. Quem estiver observando a mempool vê a transação,
+extrai a pública, recupera a privada e transmite uma concorrente com taxa maior
+para o próprio endereço. A janela é de um bloco, cerca de dez minutos, e pagar
+taxa alta não resolve: o atacante sempre pode pagar mais. Já aconteceu com
+soluções de puzzle antes.
+
+Por isso o resgate **não passa pela mempool pública**. A transação vai por
+submissão direta a minerador, por canais privados que aceitam transação fora da
+propagação normal, e o cliente nunca faz broadcast aberto. Isso é requisito do
+protocolo de resgate, não otimização.
+
+### O cliente nunca toca nas suas chaves
+
+O programa que você roda não pede, não lê, não armazena e não transmite chave
+privada sua. Ele precisa apenas de um endereço para onde o pagamento seria
+enviado, que é informação pública. Não existe carteira dentro dele, não existe
+seed, não existe nada para roubar da sua máquina. O código é aberto justamente
+para você conferir isso antes de instalar, e não acreditar na nossa palavra.
+
+### Onde isso ainda falha
+
+- **Cliente modificado.** Quem alterar o código para não enviar a transação
+  consegue ficar com o prêmio. Contra isso: builds reproduzíveis e releases
+  assinados, para conferir que o binário bate com o código; e o registro público
+  de quem estava com cada lote. Os endereços do puzzle estão entre os mais
+  observados do Bitcoin, então moeda que se mova sem ninguém reportar identifica
+  na hora quem tinha aquele lote.
+- **A distribuição depende de quem opera.** O prêmio chega a um endereço
+  controlado pelo operador do pool, que executa o rateio. O ledger de tickets é
+  aberto para você conferir quanto lhe cabe, mas o pagamento em si depende do
+  operador cumprir o combinado. Isso está dito também na seção final, e é a
+  principal coisa em que você precisa confiar para participar.
 
 Nenhuma das duas é garantia matemática. São incentivo e rastreabilidade, e é
 honesto chamar do que são.
@@ -191,10 +263,13 @@ Falta, em ordem:
 1. **Identidade do participante.** Hoje o nome é auto-declarado, então qualquer um
    credita ticket em qualquer nome, o que anula toda a verificação. É o primeiro
    item e é bloqueante.
-2. **Resgate automático.** O mecanismo do multisig está desenhado, não construído.
+2. **Resgate automático.** O caminho de submissão direta a minerador está
+   desenhado, não construído. É o item mais delicado do projeto.
 3. **Cliente de GPU.** O worker atual é CPU e existe para definir o protocolo sem
    ambiguidade.
-4. **Interface.** Barra de progresso, escolha de lotes, serviço em background.
+4. **Interface e medição de hardware.** Barra de progresso do lote, escolha de
+   quanto tempo rodar, e serviço em background. Desenho em
+   [`docs/CLIENT.md`](docs/CLIENT.md).
 5. **Pagamento.** Nada aqui movimenta satoshi ainda.
 
 ## Contribuindo

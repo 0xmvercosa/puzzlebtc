@@ -242,7 +242,13 @@ func (co *Coordinator) Submit(ctx context.Context, workerID string, sub proof.Su
 	}
 
 	now := co.now()
-	if err := co.db.CompleteBlock(ctx, co.campaign.ID, sub.BlockIndex, workerID, sub.LeaseToken, res.Witnesses, now); err != nil {
+	// The ticket's weight is the block's true length. Blocks are uniform, so this
+	// only differs for the truncated final block of a campaign — which is exactly
+	// the case that a plain row count would over-pay.
+	if !blk.Len.IsUint64() {
+		return nil, fmt.Errorf("coordinator: block %d has %s keys, too many to weight a ticket", blk.Index, blk.Len)
+	}
+	if err := co.db.CompleteBlock(ctx, co.campaign.ID, sub.BlockIndex, workerID, sub.LeaseToken, res.Witnesses, blk.Len.Uint64(), now); err != nil {
 		return nil, err
 	}
 
@@ -310,7 +316,7 @@ func (co *Coordinator) Distribution(ctx context.Context, prizeSat *big.Int, find
 	}
 	ph := make([]payout.Holder, len(holders))
 	for i, h := range holders {
-		ph[i] = payout.Holder{WorkerID: h.WorkerID, Tickets: h.Tickets}
+		ph[i] = payout.Holder{WorkerID: h.WorkerID, Tickets: h.Weight}
 	}
 	return payout.Compute(prizeSat, co.cfg.Split, finderID, ph)
 }
