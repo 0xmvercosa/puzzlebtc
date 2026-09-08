@@ -3,35 +3,119 @@
 Uma busca coletiva pelas chaves do [Bitcoin Puzzle](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx),
 com código aberto e contabilidade aberta.
 
-O espaço de busca é grande demais para qualquer máquina sozinha. A ideia aqui é
-juntar as máquinas de várias pessoas, dividir o espaço em lotes, e manter um
-registro verificável de quem varreu o quê. Quando alguém encontrar a chave, o
-prêmio é dividido entre todos que participaram, na proporção do trabalho de cada
-um.
+## Se a chave estiver no seu lote
 
-O projeto é aberto em todos os sentidos que importam: o código, o protocolo, o
-registro de lotes e o rateio. Você pode rodar, auditar, ou subir o seu próprio
-coordenador.
+Na campanha do puzzle #71 o prêmio é de 7,1 BTC, cerca de **US$ 568.000**. Quem
+encontrar leva 50%:
 
----
+### US$ 284.000
 
-## Por que em conjunto
+Mais a fatia dele no rateio, porque quem acha também tem tickets acumulados.
 
-O Bitcoin Puzzle existe desde 2015. Alguém colocou bitcoin em endereços com
-chaves de tamanho crescente e deixou lá, de propósito, como medida prática de
-quanto o espaço de chaves resiste a força bruta.
+E se a chave não estiver no seu lote, **você ganha assim mesmo**. Vinte por cento
+do prêmio é dividido entre todo mundo que varreu, na proporção do trabalho de
+cada um. Quem contribuiu com 1% da busca leva 1% desses 20%, sem precisar ter
+sorte nenhuma.
 
-Os puzzles pequenos caíram rápido. Os que restam têm espaços de 2⁶⁶ chaves para
-cima. Uma RTX 4090 varre cerca de 5×10¹⁴ chaves por dia, o que dá uma fração
-minúscula do total. Sozinha, ela pode rodar a vida inteira e não chegar perto.
+Sozinho você tem uma chance e um resultado: acha e leva tudo, ou não acha e não
+leva nada. A segunda opção é quase certa. Aqui você tem as duas: a chance grande
+de ser quem encontra, e a certeza de participar do resultado se qualquer um do
+grupo encontrar.
 
-Mil delas juntas continuam não esgotando o espaço, mas passam a comprar um número
-sério de bilhetes. E principalmente: com rateio, cada participante recebe pelo
-trabalho que fez, mesmo quando a chave aparece na máquina de outro. É a diferença
-entre uma loteria que você quase certamente perde e uma participação
-proporcional.
+E tem uma coisa que joga a favor de quem participa: **o prêmio é em BTC, não em
+dólar, e o BTC tende a subir ao longo do tempo.** Os 7,1 BTC do puzzle #71 são os
+mesmos 7,1 BTC hoje e daqui a cinco anos, mas o que eles valem em dinheiro
+acompanha o preço. Quem varre lote hoje está acumulando participação num prêmio
+cuja tendência histórica é valer mais depois. Também pode recuar, e o valor em
+dólar acima usa **BTC = US$ 80.000** só para dar escala.
 
----
+## Por que mais gente aumenta a SUA chance
+
+Isto é o ponto do projeto, e é matemática, não discurso.
+
+Nenhum lote é entregue duas vezes. Quando alguém varre um lote e não acha nada,
+aquele terreno sai da conta para sempre, e o espaço que resta encolhe. A chance
+do próximo lote é 1 dividido pelo que sobrou. Ou seja:
+
+**Cada lote que qualquer pessoa do pool varre aumenta a chance do seu próximo
+lote.**
+
+Quem procura sozinho com sorteio aleatório não tem isso. Ele repete terreno sem
+saber, e a chance dele é a mesma no primeiro dia e no milésimo. É o registro de
+lotes, com prova de que foram varridos, que transforma trabalho acumulado em
+chance crescente.
+
+Por isso trazer gente é do seu interesse direto, e não por generosidade. Mil
+pessoas cobrindo terreno melhoram as suas chances a cada hora. Dez mil melhoram
+dez vezes mais rápido. E o seu pedaço do bolo não diminui, porque a sua fatia é
+proporcional ao seu trabalho, não dividida por cabeça.
+
+| pessoas no pool | cobertura por ano | quanto isso melhora a chance do seu próximo lote |
+|---|---|---|
+| 100 | 0,33% | pouco, mas já é o dobro da concorrência visível |
+| 1.000 | 3,3% | 6,4 vezes toda a busca visível no #71 |
+| 10.000 | 33% | um terço do espaço em doze meses |
+
+## Como participar
+
+Três formas, da mais fácil para a mais rápida.
+
+**No navegador.** Abre a página e começa. Nada para instalar, funciona em
+qualquer sistema. É a forma mais lenta de longe, então trate como jeito de
+conhecer o projeto e contribuir um pouco, não como sua produção principal.
+
+**Clonando o repositório.** Você lê o código antes de rodar, compila na sua
+máquina e sabe exatamente o que está executando. É o caminho recomendado para
+quem se importa com isso, e a razão de o projeto ser aberto.
+
+```bash
+git clone https://github.com/0xmvercosa/puzzlebtc
+cd puzzlebtc && go build ./cmd/worker
+./worker --for 6h
+```
+
+**Baixando o executável.** Binário pronto para Linux, macOS e Windows, com
+assinatura e build reproduzível para você conferir que ele corresponde ao código
+publicado.
+
+Em qualquer das três, o esforço é seu. Placa de vídeo rende muito mais que CPU, e
+rig rende muito mais que uma placa. Quem só tem CPU também participa: um lote
+leva mais tempo, o programa guarda o progresso e continua depois, e o ticket vale
+o mesmo.
+
+## Melhorando o algoritmo
+
+O projeto ganha mais com uma otimização boa do que com dez participantes novos.
+Uma melhoria de 2 vezes na velocidade equivale a dobrar o pool inteiro, e vale
+para todo mundo ao mesmo tempo.
+
+Se você quiser mexer nisso, aqui está o que já sabemos que tem espaço, do mais
+promissor para o mais especulativo:
+
+**Endomorfismo GLV.** A curva secp256k1 tem um endomorfismo eficiente que permite
+derivar um segundo ponto quase de graça a partir do primeiro. Em varredura isso
+pode valer perto de 2 vezes. Ninguém aqui testou ainda.
+
+**Tamanho do lote de inversão.** A inversão de campo em lote é amortizada sobre N
+pontos, e o N ótimo depende de registradores e cache da placa. As implementações
+de referência usam valores herdados que provavelmente não são ótimos para as
+placas atuais.
+
+**O gargalo virou o hash, não a curva.** Com as otimizações de soma incremental e
+simetria, a aritmética de curva caiu para cerca de 5 multiplicações por chave,
+enquanto SHA-256 mais RIPEMD-160 gastam bem mais que isso. Otimizar hash passou a
+render mais que otimizar curva, e é onde quase ninguém olha.
+
+**Motor de kangaroo.** Para os puzzles de chave pública exposta, é o que separa
+inatingível de viável. Não existe no projeto ainda, e é a maior contribuição
+possível hoje. Ver [`docs/ALVOS.md`](docs/ALVOS.md).
+
+**Ataque à própria verificação.** Se você achar um jeito de passar na verificação
+de varredura sem varrer o lote, é a contribuição mais valiosa que existe aqui.
+Abra uma issue, mesmo que seja só uma ideia de ataque.
+
+Meça antes e depois, mande o número junto com o código. O repositório tem
+benchmarks para comparar.
 
 ## Como funciona
 
@@ -71,24 +155,17 @@ tamanho do lote. Especificação completa em [`docs/PROTOCOL.md`](docs/PROTOCOL.
 
 ---
 
-## Participando
-
-Precisa de uma GPU NVIDIA, ou CPU se for só para experimentar. Roda em Linux,
-macOS e Windows.
+## Rodando por mais tempo
 
 ```bash
-# roda dez lotes e sai
-puzzlebtc run --blocks 10
-
-# roda até você mandar parar
-puzzlebtc run
-
-# instala como serviço, para continuar com o PC ligado e você longe
-puzzlebtc service install
+puzzlebtc run --for 1h        # roda uma hora e para
+puzzlebtc run --for 12h
+puzzlebtc run --blocks 20     # roda vinte lotes e para
+puzzlebtc service install     # roda com o PC ligado e voce longe
 ```
 
-A interface mostra o lote atual com barra de progresso, seus tickets, e a
-velocidade da máquina.
+A interface mostra o lote atual com barra de progresso, seus tickets e a
+velocidade da máquina. Detalhes em [`docs/CLIENT.md`](docs/CLIENT.md).
 
 ### O rateio
 
@@ -103,11 +180,9 @@ nível, nem vantagem para quem chegou antes.
 
 ## As contas
 
-**Você não recebe nada a menos que o pool encontre a chave.** Não é rendimento,
-não acumula saldo, não tem pagamento periódico. É bilhete de loteria: varrer
-compra chance, e a chance só vira dinheiro se a busca do pool acertar antes de
-qualquer outra pessoa no mundo. Se um pesquisador solitário ou outro pool achar
-primeiro, a campanha acaba e ninguém aqui recebe.
+O pagamento só acontece se o pool encontrar a chave. Não é rendimento, não
+acumula saldo, não tem pagamento periódico. Se um pesquisador solitário ou outro
+pool achar primeiro, a campanha acaba sem pagamento para ninguém daqui.
 
 Com isso claro, dá para dimensionar quanta chance cada máquina compra. Valores
 com **BTC = US$ 80.000**; ajuste proporcionalmente se o preço mudar.
@@ -329,13 +404,10 @@ Falta, em ordem:
 
 ## Contribuindo
 
-O projeto precisa de gente em coisas bem diferentes: kernel CUDA, empacotamento
-para os três sistemas, interface, e revisão do esquema de verificação. Essa
-última em especial: se você encontrar um jeito de passar na verificação sem
-varrer o lote, abra uma issue, é a contribuição mais valiosa possível aqui.
-
-A pesquisa que originou o projeto, incluindo a análise das ferramentas existentes
-de busca no puzzle, está em [`docs/research/`](docs/research/).
+Além do algoritmo, o projeto precisa de gente em kernel CUDA, empacotamento para
+os três sistemas, e interface. A pesquisa que originou tudo isto, com a análise
+das ferramentas de busca que já existem, está em
+[`docs/research/`](docs/research/).
 
 ---
 
