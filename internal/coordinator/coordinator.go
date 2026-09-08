@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	mrand "math/rand"
+	mrand "math/rand/v2"
 	"time"
 
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
@@ -67,7 +67,6 @@ type Coordinator struct {
 	campaign *keyspace.Campaign
 	verifier *proof.Verifier
 	claims   *keyspace.ClaimSet
-	rng      *mrand.Rand
 	now      func() time.Time
 }
 
@@ -129,17 +128,8 @@ func New(ctx context.Context, db *store.DB, c *keyspace.Campaign, p proof.Params
 		campaign: c,
 		verifier: v,
 		claims:   claims,
-		rng:      mrand.New(mrand.NewSource(int64(bigEndianU64(seed[:])))), //nolint:gosec // block choice, not a secret
 		now:      time.Now,
 	}, nil
-}
-
-func bigEndianU64(b []byte) uint64 {
-	var v uint64
-	for _, x := range b {
-		v = v<<8 | uint64(x)
-	}
-	return v
 }
 
 // Campaign exposes the campaign being served.
@@ -244,7 +234,7 @@ func (co *Coordinator) LeaseBlock(ctx context.Context, workerID string) (*Lease,
 // trade for a search that will never exhaust its space anyway.
 func (co *Coordinator) pickIndex(total uint64) (uint64, string) {
 	draw := func() uint64 {
-		return uint64(co.rng.Int63n(int64(total))) //nolint:gosec // uniform over the campaign
+		return mrand.Uint64N(total)
 	}
 	if co.claims.Blocks() == 0 {
 		return draw(), TierFresh
@@ -296,7 +286,7 @@ func (co *Coordinator) Submit(ctx context.Context, workerID string, sub proof.Su
 		return nil, err
 	}
 
-	deep := co.rng.Float64() < co.cfg.DeepAuditRate
+	deep := mrand.Float64() < co.cfg.DeepAuditRate
 	res, err := co.verifier.Verify(blk, sub, deep)
 	if err != nil {
 		return nil, err // *proof.Rejection for a failed proof

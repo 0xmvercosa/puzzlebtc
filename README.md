@@ -66,9 +66,11 @@ rig de seis placas, e nada impede que volte com mais depois.
 
 Três formas, da mais fácil para a mais rápida.
 
-**No navegador.** Abre a página e começa. Nada para instalar, funciona em
-qualquer sistema. É a forma mais lenta de longe, então trate como jeito de
-conhecer o projeto e contribuir um pouco, não como sua produção principal.
+**No navegador, para ver funcionando.** Abre a página e assiste a busca rodar de
+verdade na sua máquina, sem instalar nada. Serve para entender o mecanismo e
+conferir que o projeto faz o que diz. Não conta como participação: no navegador
+um lote levaria semanas, e lote que não fecha não gera ticket. A página avisa
+isso na tela.
 
 **Clonando o repositório.** Você lê o código antes de rodar, compila na sua
 máquina e sabe exatamente o que está executando. É o caminho recomendado para
@@ -121,7 +123,9 @@ de varredura sem varrer o lote, é a contribuição mais valiosa que existe aqui
 Abra uma issue, mesmo que seja só uma ideia de ataque.
 
 Meça antes e depois, mande o número junto com o código. O repositório tem
-benchmarks para comparar.
+benchmarks para comparar, e [`docs/OTIMIZACOES.md`](docs/OTIMIZACOES.md) traz um
+levantamento com ganho medido e esforço estimado de cada mudança candidata,
+incluindo as que foram medidas e descartadas.
 
 ## Como funciona
 
