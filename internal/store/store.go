@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE INDEX IF NOT EXISTS tickets_by_worker ON tickets(campaign_id, worker_id);
 
+-- Third-party scan claims: ranges somebody says they already searched. These are
+-- NEVER treated as swept — no proof this project accepts backs them. They only
+-- push those blocks to the back of the allocation queue.
+CREATE TABLE IF NOT EXISTS external_claims (
+  campaign_id TEXT    NOT NULL REFERENCES campaigns(id),
+  lo_block    INTEGER NOT NULL,
+  hi_block    INTEGER NOT NULL,
+  source      TEXT    NOT NULL,
+  note        TEXT    NOT NULL DEFAULT '',
+  imported_at INTEGER NOT NULL,
+  PRIMARY KEY (campaign_id, lo_block, hi_block, source)
+);
+
 CREATE TABLE IF NOT EXISTS solutions (
   campaign_id  TEXT PRIMARY KEY REFERENCES campaigns(id),
   block_index  INTEGER NOT NULL,
@@ -246,6 +259,55 @@ func (db *DB) RecordSolution(ctx context.Context, campaignID string, index uint6
 		return fmt.Errorf("store: close campaign: %w", err)
 	}
 	return tx.Commit()
+}
+
+// AddExternalClaim records a third-party scan claim over a block range.
+func (db *DB) AddExternalClaim(ctx context.Context, campaignID string, lo, hi uint64, source, note string) error {
+	if lo > hi {
+		return fmt.Errorf("store: claim range %d-%d is inverted", lo, hi)
+	}
+	if source == "" {
+		return errors.New("store: a claim must name its source; an unattributed claim cannot be re-checked later")
+	}
+	_, err := db.sql.ExecContext(ctx, `
+		INSERT INTO external_claims (campaign_id, lo_block, hi_block, source, note, imported_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(campaign_id, lo_block, hi_block, source) DO NOTHING`,
+		campaignID, int64(lo), int64(hi), source, note, time.Now().Unix())
+	if err != nil {
+		return fmt.Errorf("store: add external claim: %w", err)
+	}
+	return nil
+}
+
+// ExternalClaim is one stored third-party claim.
+type ExternalClaim struct {
+	Lo, Hi uint64
+	Source string
+	Note   string
+}
+
+// ExternalClaims lists every claim recorded for a campaign.
+func (db *DB) ExternalClaims(ctx context.Context, campaignID string) ([]ExternalClaim, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT lo_block, hi_block, source, note FROM external_claims
+		WHERE campaign_id = ? ORDER BY lo_block, hi_block`, campaignID)
+	if err != nil {
+		return nil, fmt.Errorf("store: external claims: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ExternalClaim
+	for rows.Next() {
+		var c ExternalClaim
+		var lo, hi int64
+		if err := rows.Scan(&lo, &hi, &c.Source, &c.Note); err != nil {
+			return nil, fmt.Errorf("store: scan external claim: %w", err)
+		}
+		c.Lo, c.Hi = uint64(lo), uint64(hi)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // Stats summarizes a campaign's progress.

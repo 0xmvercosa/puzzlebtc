@@ -148,16 +148,65 @@ valor de cada lote cai pela metade a cada degrau:
 |---|---|---|---|---|
 | puzzle #71 | 2⁷⁰ | 7,1 BTC | US$ 0,00025 | US$ 66,00 |
 | puzzle #72 | 2⁷¹ | 7,2 BTC | US$ 0,00013 | US$ 33,46 |
-| puzzle #140 | 2¹³⁹ | 14,0 BTC | US$ 0,0000000000000000002 | US$ 0,00 |
 
-O #140 está na tabela para deixar claro que ele não é opção. O prêmio é o dobro,
-mas o espaço é 10²⁰ vezes maior. Um rig inteiro rodando um século ali tem valor
-esperado que arredonda para zero em qualquer moeda. Puzzle alto não é aposta
-ousada, é aposta sem bilhete.
+Dentro da força bruta, **a regra é mirar o menor puzzle ainda aberto**. A
+diferença entre um degrau e outro é maior que qualquer upgrade de hardware que
+você possa comprar.
 
-**A regra do pool é mirar o menor puzzle ainda aberto.** É onde cada lote vale
-mais, e a diferença entre um degrau e outro é maior que qualquer upgrade de
-hardware que você possa comprar.
+### Os puzzles de número redondo são outra história
+
+Os puzzles múltiplos de 5 caíram fora de ordem, e não foi sorte. Em 2017 o autor
+do desafio gastou desses endereços, e gastar publica a chave pública na
+assinatura. Com a chave pública conhecida o problema deixa de ser busca cega:
+passa a ser logaritmo discreto num intervalo, que o algoritmo kangaroo resolve em
+raiz quadrada do trabalho. No #140 isso é 4 × 10²⁰ vezes menos operações.
+
+Isso muda a lista de alvos bons. Medindo por operações por dólar de prêmio:
+
+| alvo | algoritmo | operações | prêmio | 1.000 placas |
+|---|---|---|---|---|
+| #67 | força bruta | 7,4 × 10¹⁹ | US$ 536 mil | 5 meses |
+| #135 | kangaroo | 3,0 × 10²⁰ | US$ 1,08 mi | 1,5 ano |
+| #71 | força bruta | 1,2 × 10²¹ | US$ 568 mil | 6 anos |
+| #140 | kangaroo | 1,7 × 10²¹ | US$ 1,12 mi | 8,5 anos |
+
+O #135 paga o dobro do #71 e resolve em um quarto do tempo. O #140 também é
+melhor alvo que o #71.
+
+Kangaroo é outro motor de busca, e o cliente atual não faz isso ainda. A análise
+completa, incluindo o que precisa ser confirmado na cadeia antes de abrir uma
+campanha dessas, está em [`docs/ALVOS.md`](docs/ALVOS.md).
+
+### Quem mais está procurando
+
+O btcpuzzle.info acompanha a busca declarada no puzzle #71. Em números dele:
+
+| | |
+|---|---|
+| chaves já varridas | 1,10 × 10¹⁹ |
+| fração do espaço | **0,93%** |
+| ritmo agregado de todo mundo | 194 Gchaves/s |
+
+Vale reler o último número. **Toda a busca visível no #71 hoje soma 194 bilhões
+de chaves por segundo, o equivalente a cerca de 31 placas topo de linha.** Depois
+de anos de gente procurando, menos de 1% do espaço foi coberto, e no ritmo atual
+eles levariam 193 anos para cobrir o resto.
+
+É contra isso que um pool se compara:
+
+| pool | vezes a concorrência inteira | cobertura por ano |
+|---|---|---|
+| 100 placas | 0,6× | 0,33% |
+| 500 placas | 3,2× | 1,65% |
+| 1.000 placas | **6,4×** | 3,31% |
+| 5.000 placas | **32×** | 16,5% |
+
+Mil placas fazem seis vezes o trabalho de todos os outros buscadores somados.
+Não é um mercado saturado: é um espaço quase intocado sendo raspado por um
+punhado de máquinas.
+
+Uma ressalva honesta: esse número é o que aquele site enxerga. Quem procura em
+silêncio não aparece ali, então trate como piso da concorrência, não como total.
 
 ### Quanto o pool consegue cobrir
 
@@ -171,6 +220,13 @@ Aqui está o motivo de existir um pool, e o motivo de chamar mais gente:
 Uma placa sozinha cobre 0,0003% do #71 em um ano. Mil placas cobrem 3,3%, o que
 já é uma chance de uma em trinta por ano. Dez mil cobrem um terço do espaço
 inteiro em doze meses.
+
+E tem uma coisa que só um pool com registro de lotes consegue oferecer: **cada
+lote fechado aumenta a chance do próximo.** Como nenhum lote é entregue duas
+vezes, o espaço que sobra encolhe, e a chance do lote seguinte é 1 dividido pelo
+que resta. Quem busca sozinho com sorteio aleatório repete terreno sem saber e
+fica com a mesma chance para sempre. É a garantia de não repetir que transforma
+trabalho acumulado em chance crescente.
 
 E é por isso que trazer gente é do seu interesse direto: **o seu valor por lote
 não muda com o tamanho do pool**, porque a sua fatia é proporcional ao seu

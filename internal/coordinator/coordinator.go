@@ -25,6 +25,14 @@ import (
 // exhausting the budget is the signal that the keyspace is effectively used up.
 const leaseAttempts = 32
 
+// claimSkipAttempts bounds how many times allocation rerolls to avoid ground a
+// third party claims to have searched. Rerolling costs one in-memory lookup, and
+// the expected number of tries is 1/(1-f) for a claimed fraction f — under 10
+// even at 90% claimed. Past this budget the unclaimed ground is either exhausted
+// or too sparse to find by sampling, and allocation falls through to claimed
+// blocks rather than refusing to hand out work.
+const claimSkipAttempts = 64
+
 // Config holds the operator's choices for one coordinator process.
 type Config struct {
 	// LeaseTTL is how long a worker has to return a block before it goes back
@@ -58,6 +66,7 @@ type Coordinator struct {
 	db       *store.DB
 	campaign *keyspace.Campaign
 	verifier *proof.Verifier
+	claims   *keyspace.ClaimSet
 	rng      *mrand.Rand
 	now      func() time.Time
 }
@@ -102,11 +111,24 @@ func New(ctx context.Context, db *store.DB, c *keyspace.Campaign, p proof.Params
 	if _, err := rand.Read(seed[:]); err != nil {
 		return nil, fmt.Errorf("coordinator: seed rng: %w", err)
 	}
+	// Third-party claims only reorder allocation, so a failure to read them is not
+	// fatal to the campaign — but it silently changes behaviour, so it is an error.
+	stored, err := db.ExternalClaims(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	brs := make([]keyspace.BlockRange, 0, len(stored))
+	for _, cl := range stored {
+		brs = append(brs, keyspace.BlockRange{Lo: cl.Lo, Hi: cl.Hi})
+	}
+	claims := keyspace.NewClaimSet(brs)
+
 	return &Coordinator{
 		cfg:      cfg,
 		db:       db,
 		campaign: c,
 		verifier: v,
+		claims:   claims,
 		rng:      mrand.New(mrand.NewSource(int64(bigEndianU64(seed[:])))), //nolint:gosec // block choice, not a secret
 		now:      time.Now,
 	}, nil
@@ -136,7 +158,18 @@ type Lease struct {
 	// Watchlist is every HASH160 the worker must report a match on: the real
 	// target plus this block's canaries, shuffled.
 	Watchlist []string `json:"watchlist"`
+	// Tier is "fresh" for ground nobody claims to have searched, or "reclaim"
+	// for a block inside a third-party claim. Reclaim blocks are handed out only
+	// once fresh ground runs out. Workers do not need to treat them differently;
+	// it is shown so a participant can see what they are sweeping.
+	Tier string `json:"tier"`
 }
+
+// Allocation tiers.
+const (
+	TierFresh   = "fresh"
+	TierReclaim = "reclaim"
+)
 
 // LeaseBlock hands a worker a uniformly random block that nobody holds.
 //
@@ -160,7 +193,7 @@ func (co *Coordinator) LeaseBlock(ctx context.Context, workerID string) (*Lease,
 	}
 
 	for attempt := 0; attempt < leaseAttempts; attempt++ {
-		index := uint64(co.rng.Int63n(int64(total))) //nolint:gosec // uniform over the campaign
+		index, tier := co.pickIndex(total)
 		token, err := newToken()
 		if err != nil {
 			return nil, err
@@ -192,10 +225,38 @@ func (co *Coordinator) LeaseBlock(ctx context.Context, workerID string) (*Lease,
 			ExpiresAt:  now.Add(co.cfg.LeaseTTL).Unix(),
 			Params:     co.verifier.Params(),
 			Watchlist:  watchlist,
+			Tier:       tier,
 		}, nil
 	}
 	return nil, fmt.Errorf("%w after %d attempts: the campaign keyspace is effectively exhausted",
 		store.ErrNoBlockAvailable, leaseAttempts)
+}
+
+// pickIndex draws a block, preferring ground no third party claims to have
+// searched.
+//
+// The preference is an ordering, never an exclusion. If the claims are honest,
+// sweeping unclaimed ground first raises the odds per block by 1/(1-f), because
+// the key cannot be sitting where someone already looked. If the claims are
+// dishonest, nothing is lost: those blocks still go out, just after the fresh
+// ground. Excluding them instead would trade a permanent risk of skipping the
+// key for a temporary saving in duplicated work, which is the wrong side of that
+// trade for a search that will never exhaust its space anyway.
+func (co *Coordinator) pickIndex(total uint64) (uint64, string) {
+	draw := func() uint64 {
+		return uint64(co.rng.Int63n(int64(total))) //nolint:gosec // uniform over the campaign
+	}
+	if co.claims.Blocks() == 0 {
+		return draw(), TierFresh
+	}
+	for i := 0; i < claimSkipAttempts; i++ {
+		if index := draw(); !co.claims.Contains(index) {
+			return index, TierFresh
+		}
+	}
+	// Fresh ground is exhausted or too sparse to hit by sampling. Fall through
+	// rather than refuse work.
+	return draw(), TierReclaim
 }
 
 func newToken() (string, error) {
@@ -279,6 +340,13 @@ type Progress struct {
 	Tickets         int64   `json:"tickets"`
 	Workers         int64   `json:"workers"`
 	FractionSwept   float64 `json:"fraction_swept"`
+	// ClaimedByOthers is the share of the campaign a third party says it already
+	// searched. Unverified, and swept anyway once fresh ground runs out.
+	ClaimedByOthers float64 `json:"claimed_by_others"`
+	// OddsPerBlock is the current chance that the next block handed out holds
+	// the key, given everything proven swept so far came back empty. It rises as
+	// the campaign progresses, because blocks are never reissued.
+	OddsPerBlock float64 `json:"odds_per_block"`
 }
 
 // Progress summarizes the campaign. FractionSwept will be indistinguishable
@@ -294,6 +362,19 @@ func (co *Coordinator) Progress(ctx context.Context) (*Progress, error) {
 		new(big.Float).SetInt(total),
 	).Float64()
 
+	// Sampling without replacement: with the key uniform over N blocks and k
+	// proven empty, the next block holds it with probability 1/(N-k). This is
+	// what the no-reissue rule buys — a searcher that reshuffles instead is stuck
+	// at 1/N forever.
+	remaining := new(big.Int).Sub(total, big.NewInt(s.Completed))
+	odds := 0.0
+	if remaining.Sign() > 0 {
+		odds, _ = new(big.Float).Quo(
+			big.NewFloat(1),
+			new(big.Float).SetInt(remaining),
+		).Float64()
+	}
+
 	return &Progress{
 		CampaignID:      co.campaign.ID,
 		PuzzleNum:       co.campaign.PuzzleNum,
@@ -303,6 +384,8 @@ func (co *Coordinator) Progress(ctx context.Context) (*Progress, error) {
 		Tickets:         s.Tickets,
 		Workers:         s.Workers,
 		FractionSwept:   frac,
+		ClaimedByOthers: co.claims.Fraction(total),
+		OddsPerBlock:    odds,
 	}, nil
 }
 
