@@ -172,13 +172,20 @@ func (co *Coordinator) ArmCanary(ctx context.Context, p *CanaryPlan, fundedSat u
 // be mistaken for a modified client.
 const canaryLeaseWindow = 24 * time.Hour
 
-// tryDealCanary offers a canary block instead of a random one, at the campaign's
-// configured rate. It returns 0, false when no canary is dealt.
+// tryDealCanary offers a canary block instead of a random one when the worker is
+// due for a test. It returns 0, false when no canary is dealt.
+//
+// Being due is a function of when this worker was last tested, not of how many
+// blocks it has taken. That is what makes the test unpredictable in the way that
+// matters: a client cannot know which of its requests will carry the test, and
+// there is no window in which being modified is safe. Testing only at enrolment
+// would leave exactly such a window — pass once, then swap the binary.
 func (co *Coordinator) tryDealCanary(ctx context.Context, workerID string) (uint64, bool) {
-	if co.cfg.CanaryRate <= 0 {
+	if co.cfg.CanaryEvery <= 0 {
 		return 0, false
 	}
-	if mrandFloat() >= co.cfg.CanaryRate {
+	due, err := co.db.CanaryDue(ctx, co.campaign.ID, workerID, co.now(), co.cfg.CanaryEvery)
+	if err != nil || !due {
 		return 0, false
 	}
 	c, err := co.db.TakeArmedCanary(ctx, co.campaign.ID, workerID, co.now(), canaryLeaseWindow)

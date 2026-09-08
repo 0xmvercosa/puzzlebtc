@@ -191,3 +191,102 @@ func TestCanaryPlanIsInsideTheBlockAndStable(t *testing.T) {
 		t.Fatal("canary plan is not reproducible; an operator who lost it could not regenerate it")
 	}
 }
+
+// The cadence must be per worker and per unit of time, never per block. A card
+// that closes tens of thousands of blocks a day and a laptop that closes a
+// handful have to be tested at the same rate; a per-block probability would test
+// the card hundreds of times daily and leave the laptop untested for a month.
+func TestCanaryCadenceIsPerWorkerNotPerBlock(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+
+	// Arm plenty, so nothing is limited by supply.
+	for i := uint64(100); i < 130; i++ {
+		plan, err := co.PlanCanary(ctx, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := co.ArmCanary(ctx, plan, 50_000, "tx"+plan.Address); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A worker hammering the coordinator, as a GPU would.
+	dealt := 0
+	for i := 0; i < 200; i++ {
+		if _, ok := co.tryDealCanary(ctx, "gpu-rig"); ok {
+			dealt++
+		}
+	}
+	if dealt != 1 {
+		t.Fatalf("200 lease requests produced %d canaries, want exactly 1 — the cadence is per block, not per worker", dealt)
+	}
+
+	// Still not due a moment later.
+	if _, ok := co.tryDealCanary(ctx, "gpu-rig"); ok {
+		t.Error("a second canary was dealt inside the cadence window")
+	}
+
+	// Due again once the window passes.
+	co.now = func() time.Time { return time.Now().Add(8 * 24 * time.Hour) }
+	if _, ok := co.tryDealCanary(ctx, "gpu-rig"); !ok {
+		t.Error("no canary dealt after the cadence window elapsed")
+	}
+}
+
+// A slow participant must be tested at the same rate as a fast one.
+func TestSlowAndFastWorkersAreTestedEqually(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+	for i := uint64(200); i < 210; i++ {
+		plan, err := co.PlanCanary(ctx, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := co.ArmCanary(ctx, plan, 50_000, "tx"+plan.Address); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The laptop asks once; the rig asks a hundred times.
+	fast, slow := 0, 0
+	for i := 0; i < 100; i++ {
+		if _, ok := co.tryDealCanary(ctx, "rig"); ok {
+			fast++
+		}
+	}
+	if _, ok := co.tryDealCanary(ctx, "laptop"); ok {
+		slow++
+	}
+	if fast != 1 || slow != 1 {
+		t.Errorf("rig got %d canaries and laptop got %d; both should get exactly 1 per window", fast, slow)
+	}
+}
+
+// Testing only at enrolment would leave a safe window: pass once, then swap the
+// binary. This pins that the mechanism keeps testing after the first time.
+func TestWorkerIsRetestedAfterPassingOnce(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+	for i := uint64(300); i < 305; i++ {
+		plan, err := co.PlanCanary(ctx, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := co.ArmCanary(ctx, plan, 50_000, "tx"+plan.Address); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	base := time.Now()
+	tests := 0
+	for week := 0; week < 4; week++ {
+		co.now = func() time.Time { return base.Add(time.Duration(week) * 8 * 24 * time.Hour) }
+		if _, ok := co.tryDealCanary(ctx, "mallory"); ok {
+			tests++
+		}
+	}
+	if tests != 4 {
+		t.Fatalf("worker tested %d times over four windows, want 4 — a client that passes once must keep being tested", tests)
+	}
+}

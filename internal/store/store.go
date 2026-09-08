@@ -164,6 +164,18 @@ CREATE INDEX IF NOT EXISTS canaries_due   ON claim_canaries(state, deadline);
 
 -- Workers excluded from leasing. A ban is a statement that this identity failed
 -- a check that honest software passes, so it stops receiving work.
+-- When each worker was last given a claim canary. The cadence is per worker and
+-- per unit of time, never per block: a card that closes 62,000 blocks a day and
+-- a laptop that closes thirty must be tested at the same rate, and a per-block
+-- probability would test the card hundreds of times daily while the laptop went
+-- untested for a month.
+CREATE TABLE IF NOT EXISTS canary_cadence (
+  campaign_id TEXT    NOT NULL,
+  worker_id   TEXT    NOT NULL,
+  last_dealt  INTEGER NOT NULL,
+  PRIMARY KEY (campaign_id, worker_id)
+);
+
 CREATE TABLE IF NOT EXISTS bans (
   worker_id  TEXT PRIMARY KEY,
   reason     TEXT NOT NULL,
@@ -495,11 +507,29 @@ type Canary struct {
 	Deadline   int64
 }
 
+// CanaryDue reports whether a worker is due for a claim canary, given how long
+// tests should be spaced apart. A worker never tested is always due.
+func (db *DB) CanaryDue(ctx context.Context, campaignID, workerID string, now time.Time, every time.Duration) (bool, error) {
+	var last int64
+	err := db.sql.QueryRowContext(ctx,
+		`SELECT last_dealt FROM canary_cadence WHERE campaign_id = ? AND worker_id = ?`,
+		campaignID, workerID).Scan(&last)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: canary due: %w", err)
+	}
+	return now.Sub(time.Unix(last, 0)) >= every, nil
+}
+
 // TakeArmedCanary claims one armed canary for dealing, marking it dealt to
-// workerID with a deadline. Returns nil when none is armed.
+// workerID with a deadline, and records the cadence. Returns nil when none is
+// armed.
 //
-// The read and the state change are one transaction so two simultaneous lease
-// requests cannot be handed the same canary block.
+// The read, the state change and the cadence update are one transaction so two
+// simultaneous lease requests cannot be handed the same canary block, and a
+// worker cannot be charged a test that was never dealt.
 func (db *DB) TakeArmedCanary(ctx context.Context, campaignID, workerID string, now time.Time, window time.Duration) (*Canary, error) {
 	tx, err := db.sql.BeginTx(ctx, nil)
 	if err != nil {
@@ -528,6 +558,12 @@ func (db *DB) TakeArmedCanary(ctx context.Context, campaignID, workerID string, 
 		WHERE campaign_id = ? AND block_index = ? AND state = ?`,
 		CanaryDealt, workerID, now.Unix(), c.Deadline, campaignID, idx, CanaryArmed); err != nil {
 		return nil, fmt.Errorf("store: mark canary dealt: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO canary_cadence (campaign_id, worker_id, last_dealt) VALUES (?, ?, ?)
+		ON CONFLICT(campaign_id, worker_id) DO UPDATE SET last_dealt = excluded.last_dealt`,
+		campaignID, workerID, now.Unix()); err != nil {
+		return nil, fmt.Errorf("store: record canary cadence: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("store: commit canary: %w", err)

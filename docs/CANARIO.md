@@ -105,9 +105,46 @@ do pool, em 30% das vezes quem encontra é ele, e nesses casos o risco é zero. 
 atacante precisa deixar passar para não se revelar, mais caro fica esperar pelo
 prêmio grande.
 
+## Por que o teste é contínuo, e não só na entrada
+
+Testar só na matrícula parece mais barato e é **estritamente pior**: o
+participante roda o cliente oficial no primeiro lote, passa, e troca o binário
+depois. Custo do ataque: quase zero.
+
+O que faz o mecanismo funcionar é não existir janela segura para estar
+modificado. O teste tem que poder vir a qualquer momento, para sempre.
+
+## A cadência é por participante e por tempo
+
+Nunca por lote. Uma placa topo de linha fecha um lote a cada 1,4 segundo e um
+notebook leva quase uma hora, então uma probabilidade por lote testaria a placa
+centenas de vezes por dia e deixaria o notebook um mês sem teste:
+
+| `canary_rate` por lote | RTX 4090 | CPU 4 núcleos |
+|---|---|---|
+| 1% | 625 canários/dia | 1 a cada 3 dias |
+| 0,1% | 62 canários/dia | 1 a cada 33 dias |
+
+Pagaria uma fortuna para super-testar exatamente as máquinas com menos chance de
+serem a única de alguém.
+
+Por isso a configuração é `canary_every`, uma duração: cada participante recebe
+um canário a cada N dias, independente de quantos lotes fez. Padrão de sete dias.
+
 ## Custo
 
-Cada canário custa uma transação de financiamento mais o valor deixado nele. Com
-`canary_rate` em 1%, um participante que faz cem lotes encontra em média um
-canário. A taxa é configurável e é uma troca direta: dinheiro por velocidade de
-detecção.
+O canário é **ida e volta, não perda**: o participante varre as moedas para o
+endereço do operador, então o valor plantado volta. O custo é só a taxa das
+transações.
+
+O financiamento é em lote — uma transação com cem saídas arma cem canários — e a
+taxa do resgate sai do próprio canário.
+
+| participantes | canários/semana | custo semanal em taxa |
+|---|---|---|
+| 100 | 100 | ~US$ 1,50 |
+| 1.000 | 1.000 | ~US$ 15 |
+| 10.000 | 10.000 | ~US$ 150 |
+
+Com taxa de rede a US$ 1,50 por transação de financiamento. Escala com o número
+de participantes, que é o que também escala o valor do pool.

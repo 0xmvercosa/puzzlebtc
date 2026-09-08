@@ -58,11 +58,17 @@ type Config struct {
 	DeepAuditRate float64
 	// Split is the prize distribution policy.
 	Split payout.Split
-	// CanaryRate is the share of leases that hand out a funded claim canary
-	// instead of a random block, in [0,1]. Every canary costs an on-chain
-	// funding transaction, so this trades money for how quickly a modified
-	// client is caught. Zero disables the mechanism.
-	CanaryRate float64
+	// CanaryEvery is how often each participant is given a funded claim canary.
+	//
+	// The cadence is per participant and per unit of time, deliberately not per
+	// block. A high-end card closes a block every 1.4 seconds and a laptop takes
+	// most of an hour, so a per-block probability would test the card hundreds of
+	// times a day while the laptop went a month untested — paying a fortune to
+	// over-test exactly the machines least likely to be someone's only one.
+	//
+	// Shorter means a modified client is caught sooner and costs more in fees.
+	// Zero disables the mechanism.
+	CanaryEvery time.Duration
 	// CanarySecret seeds canary placement and witness sampling. Losing it
 	// invalidates every outstanding lease; leaking it lets a worker fake the
 	// canary test.
@@ -74,7 +80,7 @@ func DefaultConfig() Config {
 	return Config{
 		LeaseTTL:      2 * time.Hour,
 		DeepAuditRate: 0.02,
-		CanaryRate:    0.01,
+		CanaryEvery:   7 * 24 * time.Hour,
 		Split:         payout.DefaultSplit(),
 	}
 }
@@ -103,8 +109,8 @@ func New(ctx context.Context, db *store.DB, c *keyspace.Campaign, p proof.Params
 	if cfg.DeepAuditRate < 0 || cfg.DeepAuditRate > 1 {
 		return nil, errors.New("coordinator: deep_audit_rate must be in [0,1]")
 	}
-	if cfg.CanaryRate < 0 || cfg.CanaryRate > 1 {
-		return nil, errors.New("coordinator: canary_rate must be in [0,1]")
+	if cfg.CanaryEvery < 0 {
+		return nil, errors.New("coordinator: canary_every must not be negative")
 	}
 	v, err := proof.NewVerifier(c, p, cfg.CanarySecret)
 	if err != nil {
