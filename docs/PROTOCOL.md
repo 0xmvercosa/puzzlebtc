@@ -6,14 +6,31 @@ Contrato entre coordenador e worker. Um worker de GPU que respeite este document
 ## Ciclo
 
 ```
-POST /v1/lease     → recebe bloco + parâmetros + watchlist
-   (varre o bloco)
+POST /v1/lease     → recebe o lote + parâmetros + watchlist
+   (varre o lote)
 POST /v1/submit    → entrega a prova, recebe o ticket
 GET  /v1/progress  → estado da campanha
 GET  /healthz
 ```
 
-## 1. Alugar um bloco
+## 0. Campanha cega
+
+Numa campanha cega — o padrão — o worker **não recebe chaves nem o índice do
+bloco**. Recebe o ponto da curva onde o lote começa e quantas chaves ele cobre, e
+endereça o lote pelo `lease_token`.
+
+Isso não é detalhe de apresentação: quem conhece o índice do bloco recupera o
+começo do lote com um logaritmo discreto sobre a largura do deslocamento em vez
+de sobre a campanha inteira — no #71, 2¹⁷ operações em vez de 2³⁶. Por isso o
+índice não aparece no lease, nem no recibo, nem no `ticket_id`. Ver
+[`../internal/blind`](../internal/blind) e [`DISSUASAO.md`](DISSUASAO.md).
+
+Um coordenador rodando com `-unblinded` devolve o formato antigo, com
+`block_index`, `lo_key_hex` e `hi_key_hex`. É modo de depuração: serve para
+apontar um worker novo a um bloco conhecido e conferir a saída. Não é como uma
+campanha real roda.
+
+## 1. Alugar um lote
 
 ```http
 POST /v1/lease
@@ -24,18 +41,19 @@ POST /v1/lease
 `count`, ou com `count` 1, a resposta continua sendo o objeto plano de sempre.
 
 **Peça em bloco se você tem GPU.** O lote é dimensionado para uma CPU fechar em
-cerca de 48 minutos, o que numa placa topo de linha dá 1,4 segundo. Uma
-requisição por lote seriam 62 mil conexões por dia só da sua máquina. Peça 50 ou
+cerca de uma hora, o que numa placa topo de linha dá 1,4 segundo. Uma requisição
+por lote seriam 62 mil conexões por dia só da sua máquina. Peça 50 ou
 100 de uma vez, trabalhe todos, e submeta um por um. O limite por requisição é
 200.
 
 ```json
 {
   "campaign_id": "puzzle-71",
-  "block_index": 733412891,
-  "lo_key_hex": "400000000000000000",
-  "hi_key_hex": "40000000000000ffff",
-  "length": "1099511627776",
+  "lot": {
+    "start_point": "03eccc6186a70229506a747a8400347a33d2dee07a4986f162da813623984bab37",
+    "length": "8589934592"
+  },
+  "length": "8589934592",
   "lease_token": "9f2c…",
   "expires_at": 1789000000,
   "proof_params": {
@@ -49,19 +67,32 @@ requisição por lote seriam 62 mil conexões por dia só da sua máquina. Peça
 }
 ```
 
-`503 no_block_available` significa que a campanha se esgotou — faça backoff, não
-desista. Os offsets são sempre relativos a `lo_key_hex`, então cabem em `uint64`
-por mais fundo que o bloco esteja no keyspace.
+`start_point` é a chave pública comprimida (33 bytes, hex) da primeira chave do
+lote. `503 no_block_available` significa que a campanha se esgotou — faça backoff,
+não desista. Os offsets são sempre relativos ao começo do lote, então cabem em
+`uint64` por mais fundo que ele esteja no keyspace.
 
 ## 2. Varrer
 
-Para cada chave `k` em `[lo, hi]`, com `offset = k - lo`:
+Parta de `P = start_point` e ande `P += G` uma vez por chave. Para cada `offset`
+de `0` a `length - 1`:
 
-1. Calcule `h = RIPEMD160(SHA256(pubkey_comprimida(k)))`.
+1. Calcule `h = RIPEMD160(SHA256(serializa_comprimido(P)))`.
 2. Se `h` tem **≥ `witness_bits` bits zero à esquerda**, registre `offset` como
    testemunha.
-3. Se `h` está na `watchlist`, registre `offset` como hit.
-4. Se `h` é igual ao alvo da campanha, registre `offset` como `found_offset`.
+3. Se `h` está na `watchlist`, registre `offset` em `canaries`.
+4. Só numa campanha `-unblinded`: se `h` é igual ao alvo, registre `offset` como
+   `found_offset`.
+
+Numa campanha cega o passo 4 não existe, e é de propósito: **o worker reporta todo
+hit da watchlist do mesmo jeito e não distingue o prêmio de um canário.** O
+coordenador re-deriva os hits que não plantou e reconhece o alvo do lado dele. Um
+worker que reporte tudo uniformemente nunca perde um achado por configuração
+errada.
+
+Somar `G` é o mesmo laço que `cacagpu` e `CUDACyclone` já rodam — inversão em lote
+de Montgomery amortiza a aritmética de curva para cerca de 5 multiplicações por
+chave. Derivar cada chave do zero seria mais lento, não mais rápido.
 
 Três exigências que derrubam a maioria das implementações na primeira tentativa:
 
@@ -84,7 +115,6 @@ POST /v1/submit
 {
   "worker_id": "alice",
   "campaign_id": "puzzle-71",
-  "block_index": 733412891,
   "lease_token": "9f2c…",
   "witnesses": [1204, 88301, 175002, …],
   "canaries": [412887, 690122, …],
@@ -98,6 +128,7 @@ POST /v1/submit
 |---|---|
 | `400` | JSON malformado, campo desconhecido, `worker_id` ausente |
 | `409 lease_invalid` | lease expirou, é de outro worker, ou o bloco já foi liquidado |
+| `500` | token de lease desconhecido, ou apresentado por outro worker |
 | `422` | a requisição estava bem-formada, a **prova** não |
 | `503 no_block_available` | campanha esgotada (só em `/lease`) |
 
@@ -117,22 +148,25 @@ Códigos `422`, todos com detalhe legível:
 Prova rejeitada **não consome o lease**: um worker com bug corrigível pode
 reenviar até o lease expirar.
 
-## 4. Se você achar a chave
+## 4. Se o seu lote contiver a chave
 
-Mande em `found_offset`. Se o worker estiver configurado com o alvo errado e
-reportar o acerto apenas como mais um hit da watchlist, **o coordenador o
-recupera mesmo assim** — ele re-deriva qualquer hit que não seja canário plantado
-e compara com o alvo. Custa uma operação de curva e só roda nos extras, então o
-caso comum não paga nada.
+Você reporta o offset em `canaries`, como faz com qualquer hit da watchlist, e
+pronto. **O coordenador re-deriva todo hit que ele não plantou e compara com o
+alvo**, então é lá que o achado é reconhecido. Custa uma operação de curva e só
+roda nos extras, então o caso comum não paga nada.
 
-Nenhum protocolo pode obrigar quem acha a reportar. Ver o modelo de confiança no
-README.
+Você não fica com a chave porque nunca a teve: o que passou pela sua máquina foram
+pontos, e o começo do lote — o outro termo da soma — está só no coordenador.
+
+Nenhum protocolo pode obrigar quem acha a reportar, e nenhum aqui tenta. O que
+este faz é tornar o não-reportar inútil sem um segundo ataque, e caro mesmo com
+ele. Ver [`DISSUASAO.md`](DISSUASAO.md) e o modelo de confiança no README.
 
 ## Parâmetros
 
 Vêm no lease e valem para aquele bloco. Não os embuta no worker.
 
-| campo | significado | default (blocos 2^40) |
+| campo | significado | default (lotes 2³³) |
 |---|---|---|
 | `witness_bits` | bits zero à esquerda que definem uma testemunha | 21 (~4.096/lote) |
 | `buckets` | fatias para o teste de cobertura | 128 (~32 testemunhas cada) |
@@ -146,7 +180,7 @@ opcional: manter 512 buckets com 4.096 testemunhas põe a média em 8 por bucket
 o piso de Poisson desaba para 1, e **cerca de 17% das submissões honestas passam
 a ser recusadas por engano.**
 
-O lote padrão é de 2³³ chaves, cerca de 8,6 bilhões: aproximadamente 48 minutos
+O lote padrão é de 2³³ chaves, cerca de 8,6 bilhões: aproximadamente uma hora
 numa CPU de quatro núcleos, 13 segundos numa placa de entrada e 1,4 segundo numa
 topo de linha. Ele é dimensionado pela CPU de propósito, para que uma máquina
 comum consiga fechar um lote inteiro numa sessão. Quem tem mais capacidade pega

@@ -23,15 +23,18 @@ $ puzzlebtc bench
 
   GPU        NVIDIA GeForce RTX 4060
   Velocidade 1,24 Gchaves/s
-  Lote       7 min
+  Lote       6,9 s
 
-  Em 1h  voce fecha    8 lotes
-  Em 2h  voce fecha   16 lotes
-  Em 6h  voce fecha   48 lotes
-  Em 12h voce fecha   97 lotes
+  Em 1h  voce fecha      519 lotes    US$ 0,0015
+  Em 2h  voce fecha    1.039 lotes    US$ 0,0030
+  Em 6h  voce fecha    3.116 lotes    US$ 0,0090
+  Em 12h voce fecha    6.233 lotes    US$ 0,0180
 
-  Campanha ativa: puzzle #71
-  Valor esperado por lote: US$ 0,00025  (0,0000000031 BTC)
+  Campanha ativa: puzzle #71 — premio 7,1 BTC (US$ 568.000)
+  Valor esperado por lote: US$ 0,0000029
+
+  Isso e valor esperado de loteria, nao rendimento: voce so recebe se
+  o pool encontrar a chave. Nao ha pagamento por tempo rodado.
 ```
 
 ## Escolhendo quanto rodar
@@ -51,10 +54,9 @@ o que foi descartado.
 
 ## Tamanho do lote
 
-O lote é o mesmo para todo mundo, dimensionado para o que um PC comum com placa
-de vídeo fecha em torno de dez a quinze minutos. Quem tem mais capacidade não
-recebe lote maior: recebe mais lotes, e trabalha vários ao mesmo tempo se tiver
-mais de uma GPU.
+O lote é o mesmo para todo mundo, dimensionado para o que uma **CPU comum** fecha
+em cerca de uma hora. Quem tem mais capacidade não recebe lote maior: recebe mais
+lotes, e trabalha vários ao mesmo tempo se tiver mais de uma GPU.
 
 Isso é o que mantém o ticket com o mesmo significado para todo mundo. Lote maior
 para quem tem máquina melhor quebraria a proporcionalidade do rateio, e a
@@ -64,14 +66,14 @@ Na campanha padrão o lote tem 2³³ chaves, cerca de 8,6 bilhões:
 
 | hardware | tempo por lote | lotes por dia |
 |---|---|---|
-| CPU 4 núcleos | ~48 min | ~30 |
-| GTX 1660 / RTX 3050 | ~13 s | ~6.500 |
+| CPU 4 núcleos | ~68 min | ~21 |
+| GTX 1660 / RTX 3050 | ~13 s | ~6.540 |
 | RTX 4060 | ~7 s | ~12.500 |
 | RTX 4090 | ~1,4 s | ~62.500 |
 | Rig com 6 placas | ~0,2 s | ~375.000 |
 
-O tamanho é escolhido pela CPU: uma máquina comum fecha um lote numa sessão de
-trabalho, sem precisar deixar ligado a noite toda para ver o primeiro ticket.
+O tamanho é escolhido pela CPU: uma máquina comum fecha um lote em cerca de uma
+hora, sem precisar deixar ligado a noite toda para ver o primeiro ticket.
 
 Quem tem placa fecha lote em segundos, e por isso o cliente pede lotes **em
 bloco**, cinquenta ou cem por requisição. Sem isso uma placa topo de linha abriria
@@ -130,6 +132,10 @@ Uma tela só, com o que importa:
   Parar: Ctrl-C  (o lote atual volta para a fila)
 ```
 
+`4a91f2e3` é um identificador opaco, não uma coordenada: o cliente não sabe onde
+o lote fica no espaço de busca, e é assim de propósito — ver a seção sobre o lote
+cego abaixo.
+
 A mesma informação sai em JSON com `--json`, para quem quiser montar painel
 próprio ou acompanhar um rig com várias máquinas.
 
@@ -158,13 +164,31 @@ Não pede chave privada. Não lê carteira. Não acessa arquivo fora do diretór
 dele. Não abre porta de entrada na sua máquina: toda comunicação é ele quem
 inicia, para o coordenador.
 
+## O cliente não tem chave nenhuma, nem a do prêmio
+
+O lote não chega como faixa de chaves. Chega como um **ponto da curva** — a chave
+pública da primeira chave do lote — e um número de passos. O cliente anda ponto a
+ponto, hasheia cada um, e reporta em que posição bateu. Quem soma a posição ao
+começo do lote é o coordenador.
+
+Consequências práticas, nas duas direções:
+
+- Não existe chave privada do prêmio na sua memória, nem por um instante. Um
+  depurador anexado ao processo, um dump, uma máquina comprometida: nenhum acha
+  o que não está lá.
+- Você também não consegue conferir sozinho que o terreno recebido está dentro da
+  faixa da campanha. Conferir custa um logaritmo discreto por lote, o mesmo que
+  atacá-lo custa. A função existe e é pública (`blind.AuditLot`), e serve para
+  auditoria por amostragem.
+- Você não recebe o número do seu lote. Saber onde ele fica seria quase tão bom
+  quanto ter a chave.
+
+Contra cliente modificado isto não é garantia — é o que transforma "ficar com o
+que meu computador achou" em "rodar um segundo ataque de propósito". O resto da
+defesa é aritmética e está em [`DISSUASAO.md`](DISSUASAO.md).
+
 ## O que o cliente não consegue fazer, e é honesto dizer
 
-Esconder de você a chave do prêmio, se ela cair no seu lote. Ela é calculada na
-sua máquina e passa pela sua memória, e o dono da máquina sempre pode lê-la com
-um depurador. Fechar o código não resolveria isso, e custaria a única coisa que
-permite você confiar no programa: poder auditá-lo.
-
-O que o cliente faz é montar e enviar a transação de resgate em milissegundos,
-antes de qualquer interação humana. Contra cliente modificado a defesa não é
-técnica, é o registro público de quem tinha o lote.
+Impedir que alguém rode uma versão modificada. Fechar o código não resolveria
+isso, e custaria a única coisa que permite você confiar no programa: poder
+auditá-lo.

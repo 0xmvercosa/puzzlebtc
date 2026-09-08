@@ -46,7 +46,7 @@ func run() error {
 		puzzleNum  = flag.Int("puzzle", 71, "Bitcoin Puzzle number to search (1-160)")
 		targetHex  = flag.String("target-hash160", "", "target HASH160, 40 hex chars (required)")
 		campaignID = flag.String("campaign", "", "campaign id (default: puzzle-<n>)")
-		blockBits  = flag.Uint("block-bits", 40, "block size as a power of two; 2^40 keys is ~30 min on a 600 Mkey/s GPU")
+		blockBits  = flag.Uint("block-bits", 33, "block size as a power of two; 2^33 keys is about an hour on a four-core CPU, which is what sets the standard lot")
 		dbPath     = flag.String("db", "puzzlepool.db", "SQLite database path")
 		addr       = flag.String("addr", ":8080", "listen address")
 		leaseTTL   = flag.Duration("lease-ttl", 2*time.Hour, "how long a worker holds a block before it returns to the pool")

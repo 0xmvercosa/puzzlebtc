@@ -199,8 +199,10 @@ com **BTC = US$ 80.000**; ajuste proporcionalmente se o preço mudar.
 
 ### Quanto vale um lote
 
-Um lote são 2³⁹ chaves, cerca de 550 bilhões. A chave está em posição aleatória
-no espaço, então cada lote varrido é uma fatia dessa loteria:
+Um lote são 2³³ chaves, cerca de 8,6 bilhões — dimensionado para uma CPU comum
+fechar um em torno de uma hora. Máquina mais forte não recebe lote maior, recebe
+mais lotes. A chave está em posição aleatória no espaço, então cada lote varrido
+é uma fatia dessa loteria:
 
 ```
 valor esperado = 0,70 × prêmio × (lotes seus ÷ lotes totais da campanha)
@@ -209,15 +211,16 @@ valor esperado = 0,70 × prêmio × (lotes seus ÷ lotes totais da campanha)
 O 0,70 é a sua fatia possível: 50% se for você quem acha, mais 20% de rateio
 entre quem ajudou.
 
-Campanha do puzzle #71, prêmio de 7,1 BTC (US$ 568.000), com 2 bilhões de lotes
+Campanha do puzzle #71, prêmio de 7,1 BTC (US$ 568.000), com 137 bilhões de lotes
 no total:
 
 | sua máquina | lotes por dia | por dia | por mês | por ano |
 |---|---|---|---|---|
-| GTX 1660 / RTX 3050 | 100 | US$ 0,019 | US$ 0,57 | US$ 6,90 |
-| RTX 4060 | 195 | US$ 0,036 | US$ 1,08 | US$ 13,15 |
-| RTX 4090 | 975 | US$ 0,181 | US$ 5,42 | US$ 66,00 |
-| Rig com 6 placas | 5.860 | US$ 1,085 | US$ 32,55 | US$ 396,00 |
+| CPU comum, 4 núcleos | 21 | US$ 0,00006 | US$ 0,0018 | US$ 0,022 |
+| GTX 1660 / RTX 3050 | 6.540 | US$ 0,019 | US$ 0,57 | US$ 6,90 |
+| RTX 4060 | 12.450 | US$ 0,036 | US$ 1,08 | US$ 13,15 |
+| RTX 4090 | 62.500 | US$ 0,181 | US$ 5,42 | US$ 66,00 |
+| Rig com 6 placas | 375.000 | US$ 1,085 | US$ 32,55 | US$ 396,00 |
 
 Em BTC, um ano de RTX 4090 nessa campanha vale 0,000825 BTC de valor esperado.
 
@@ -231,8 +234,8 @@ valor de cada lote cai pela metade a cada degrau:
 
 | campanha | espaço | prêmio | valor de 1 lote | um ano de RTX 4090 |
 |---|---|---|---|---|
-| puzzle #71 | 2⁷⁰ | 7,1 BTC | US$ 0,00025 | US$ 66,00 |
-| puzzle #72 | 2⁷¹ | 7,2 BTC | US$ 0,00013 | US$ 33,46 |
+| puzzle #71 | 2⁷⁰ | 7,1 BTC | US$ 2,9 × 10⁻⁶ | US$ 66,00 |
+| puzzle #72 | 2⁷¹ | 7,2 BTC | US$ 1,5 × 10⁻⁶ | US$ 33,46 |
 
 Dentro da força bruta, **a regra é mirar o menor puzzle ainda aberto**. A
 diferença entre um degrau e outro é maior que qualquer upgrade de hardware que
@@ -338,15 +341,25 @@ Metodologia e medições em [`docs/research/benchmarks.md`](docs/research/benchm
 
 ## Como o prêmio é resgatado
 
-O maior risco de um projeto assim é quem encontra a chave sumir com ela. Não dá
-para impedir por criptografia: quem varre o lote calcula a chave na própria
-máquina e nenhum protocolo tira ela de lá.
+O maior risco de um projeto assim é quem encontra a chave sumir com ela. A
+resposta aqui é não entregar a chave a ninguém.
 
-O que dá para fazer é encurtar a janela até quase zero. Ao encontrar a chave, e
-antes de mostrar qualquer coisa na tela, o cliente monta a transação de resgate,
-assina, e envia. O endereço de destino está no código deste repositório: qualquer
-pessoa confere para onde o dinheiro vai antes de instalar. A distribuição sai
-dali conforme o rateio publicado, com ledger aberto.
+O seu lote não chega como faixa de chaves. Chega como um **ponto da curva**: a
+chave pública da primeira chave do lote, mais quantas chaves ele cobre. O
+programa anda ponto a ponto, hasheia cada um, e reporta em qual posição bateu.
+Quem soma a posição ao começo do lote e obtém a chave é o coordenador.
+
+O que roda na sua máquina são pontos. Ponto não é chave privada, e não vira chave
+privada por inspeção, depurador ou dump de memória — só por um logaritmo discreto
+sobre a faixa inteira da campanha, que é um segundo ataque, deliberado, e que não
+vem no programa.
+
+Isso não é degradação nenhuma para você: somar pontos é exatamente o que todo
+buscador rápido já faz, e é mais rápido que derivar cada chave do zero.
+
+O código é [`internal/blind`](internal/blind), e os dois ataques contra o desenho
+— o barato, que quebraria tudo, e o caro, que é o que sobra — rodam nos testes em
+vez de serem descritos.
 
 ### O ataque da mempool, e por que ele decide o desenho
 
@@ -354,8 +367,8 @@ Transmitir a transação de resgate pela rede normal perde o prêmio, e o motivo
 específico deste tipo de endereço.
 
 A assinatura de uma transação **expõe a chave pública** de quem assinou. Com a
-chave pública conhecida e o intervalo do puzzle sendo de 2⁶⁶, o algoritmo
-kangaroo do Pollard recupera a chave privada em cerca de 2³³ operações, o que é
+chave pública conhecida e o intervalo do puzzle #71 sendo de 2⁷⁰, o algoritmo
+kangaroo do Pollard recupera a chave privada em cerca de 2³⁶ operações, o que é
 questão de segundos numa GPU. Quem estiver observando a mempool vê a transação,
 extrai a pública, recupera a privada e transmite uma concorrente com taxa maior
 para o próprio endereço. A janela é de um bloco, cerca de dez minutos, e pagar
@@ -378,39 +391,51 @@ em vez de acreditar na nossa palavra.
 
 ### E a chave do prêmio, se for você quem achar?
 
-Ela é enviada ao operador, que executa a distribuição. Vale ser direto sobre uma
-coisa: **não temos como impedir que você veja essa chave.** Ela é calculada na
-sua máquina, passa pela sua memória, e quem controla a máquina consegue lê-la
-com um depurador. Isso não é limitação nossa, é como computador funciona, e
-fechar o código não mudaria nada além de tirar de você a possibilidade de
-auditar o programa.
+Você não a recebe, e não é uma promessa: é o desenho. O seu programa reporta uma
+posição dentro de um lote cujo começo ele não conhece. Só o coordenador tem o
+outro termo da soma.
 
-O que existe é o resgate automático descrito acima, que fecha essa janela em
-milissegundos no cliente oficial, e o registro público de qual participante
-tinha o lote. Não é garantia matemática, e o README não vai fingir que é.
+Isso vale nos dois sentidos, e o segundo é o que interessa a você: **nem uma
+máquina sua comprometida, nem um programa modificado que você tenha instalado
+sem saber, consegue tirar a chave do prêmio daí.** Não há chave ali para tirar.
+
+O que você troca por isso, dito às claras: você deixa de conseguir conferir
+sozinho que o terreno que recebeu está dentro da faixa da campanha. Conferir custa
+o mesmo que atacar — um logaritmo discreto por lote — e a função que faz isso é
+pública (`blind.AuditLot`). Cabe a um auditor conferir alguns lotes por
+amostragem; não cabe a ninguém conferir todos.
+
+Pelo mesmo motivo você não recebe o número do seu lote. Saber onde ele fica seria
+quase tão bom quanto ter a chave.
 
 ### Onde isso ainda falha
 
-- **Cliente modificado.** Nada impede tecnicamente alguém de apagar o trecho de
-  resgate e ficar com a chave. O que existe é uma defesa diferente: **roubar não
-  funciona.**
+- **Cliente modificado.** Nada impede tecnicamente alguém de modificar o programa.
+  O lote cego não torna isso impossível — torna caro, deliberado e pouco
+  lucrativo, e a diferença é aritmética:
 
-  Uma chave guardada não vale nada. Para virar dinheiro o ladrão tem que
-  transmitir uma transação, e toda transação assinada publica a chave pública.
-  A partir daí a chave privada está num intervalo conhecido, e o pool a recupera
-  em **onze segundos** num rig — contra os dez minutos que a transação dele leva
-  para confirmar. O pool então transmite uma concorrente.
+  Com 50% para quem encontra, **desertar só compensa se o desertor tiver mais de
+  50% de chance de converter o roubo em dinheiro que ele mantém.** A fatia de
+  ajudante ele continua recebendo dos dois jeitos e se cancela na conta. Não
+  depende de o pool prometer nada.
 
-  E o pool se compromete publicamente a **cobrir o lance de um desertor até
-  metade do prêmio.** Metade basta: acima disso, ficar com o prêmio rende menos
-  do que teria rendido entregá-lo. E metade preserva o resto — no pior caso os
-  participantes recebem US$ 284.000 em vez de zero, e o desertor recebe zero em
-  qualquer cenário.
+  E essa chance é baixa, por um motivo que não é ameaça nossa: transmitir a
+  transação publica a chave pública na assinatura, e dali a privada sai em **onze
+  segundos** num rig contra dez minutos de bloco. Pela mempool pública ele perde
+  para o ecossistema de front-running que já existe. Por relay privado ele entrega
+  a transação a uma empresa que pode simplesmente levar os US$ 568.000 — moeda de
+  puzzle não tem dono para processar ninguém. Minerando o próprio bloco funciona,
+  e exige ser minerador.
 
-  Escapar disso exige submeter direto a um minerador, sem passar pela mempool.
-  Isso exige conta, contrato e identificação num pool de mineração — que um
-  desertor anônimo não tem e o operador tem. Ver
-  [`docs/DISSUASAO.md`](docs/DISSUASAO.md) e
+  Antes de qualquer uma dessas saídas ele ainda precisa transformar ponto em
+  chave, o que o cliente não faz e não sabe fazer.
+
+  **E o estrago é do tamanho dele.** Um desertor só leva a chave se ela estiver no
+  terreno que ele mesmo varreu, então em valor esperado ele tira do pool a fração
+  de trabalho que fez, não o prêmio inteiro. Um pool que fosse metade desertores
+  ainda pagaria 86% do que um pool limpo pagaria a quem é honesto.
+
+  Contas, tabelas e limites em [`docs/DISSUASAO.md`](docs/DISSUASAO.md) e
   [`docs/CLIENTE_MODIFICADO.md`](docs/CLIENTE_MODIFICADO.md).
 - **A distribuição depende de quem opera.** O prêmio chega a um endereço
   controlado pelo operador do pool, que executa o rateio. O ledger de tickets é

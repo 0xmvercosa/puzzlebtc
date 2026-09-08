@@ -49,7 +49,10 @@ ataque é fatia × prêmio:
 | fazenda de 50 placas | 5% | US$ 28.400 |
 | fazenda de 200 placas | 20% | US$ 113.600 |
 
-Com prêmio de US$ 568.000 e um pool de mil placas equivalentes.
+Com prêmio de US$ 568.000 e um pool de mil placas equivalentes. E este é o ganho
+**bruto**: o esperado de verdade é esse número vezes a chance de o roubo se
+converter em dinheiro mantido, que para quem não é minerador fica bem abaixo de
+metade — ver [`DISSUASAO.md`](DISSUASAO.md).
 
 **A maioria absoluta dos participantes não tem incentivo.** Ninguém constrói um
 bypass por onze dólares de expectativa. O risco vive quase inteiramente nas poucas
@@ -74,34 +77,57 @@ os mais observados do Bitcoin. Moeda que se mova sem ninguém reportar identific
 na hora quem estava com aquele terreno, e gastar moeda marcada de um endereço
 famoso é um problema real e permanente.
 
-**A fatia de quem encontra.** É uma alavanca, e é fraca. Subir de 50% para 70%
-corta o ganho da traição de US$ 261 mil para US$ 148 mil, e custa US$ 113 mil à
-plataforma. Atenua, não resolve.
+**A fatia de quem encontra.** É a alavanca mais direta que existe, e é uma escolha
+aberta: com fatia `f`, desertar só compensa se a chance de converter o roubo
+passar de `f`. Aos 50% de hoje a barra está em 50%; a 70% ela estaria em 70%, ao
+custo de 20 pontos tirados da plataforma ou dos ajudantes.
 
-## A defesa que funciona: tornar o roubo inútil
+## O que sobrou depois de descartar tudo isso
 
-Todas as opções acima tentam **impedir** o roubo, e todas falham. A que funciona
-inverte a pergunta: deixa o roubo acontecer e faz com que ele não pague.
+Todas as opções acima tentam **impedir** ou **detectar** o roubo, e todas falham.
+O que restou faz outras três perguntas, e nenhuma delas depende de confiar no
+participante.
 
-Uma chave guardada não vale nada. Para virar dinheiro o ladrão precisa transmitir,
-e transmitir publica a chave pública. Dali em diante a privada está num intervalo
-conhecido, e o pool a recupera em onze segundos num rig — contra os dez minutos
-que a transação dele leva para confirmar.
+**Não entregar a chave.** O lote é entregue como ponto da curva, não como faixa
+de chaves. O cliente anda `A, A+G, A+2G, …`, hasheia pontos e reporta o offset;
+quem calcula `a + offset` é o coordenador. Não há chave na máquina do participante
+para ser guardada, nem lendo o código, nem despejando a memória. Para virar chave
+é preciso um logaritmo discreto sobre a faixa da campanha, que é um segundo
+ataque, deliberado, que não vem no cliente. Está em `internal/blind`.
 
-Somado ao compromisso público de leiloar o prêmio inteiro em taxa antes de deixar
-um desertor ficar com ele, o ganho esperado do roubo vai a perto de zero.
+**A conta, que não precisa de ameaça.** Com 50% para quem encontra, desertar só
+compensa se o desertor tiver mais de 50% de chance de converter o roubo em
+dinheiro que ele mantém. Isso sai da álgebra, não de um compromisso do pool: a
+fatia de ajudante que ele continua recebendo é a mesma nos dois casos e se
+cancela.
 
-Custa quase nada: o kangaroo já é necessário para campanhas de chave exposta, e a
-relação com minerador já é requisito do resgate honesto. Não exige capital de giro.
+**Por que essa chance é baixa.** Transmitir publica a chave pública na assinatura,
+e dali a privada sai em onze segundos num rig contra dez minutos de bloco. Pela
+mempool pública ele perde para o ecossistema de front-running que já existe. Por
+relay privado ele entrega meio milhão de dólares a uma empresa que pode
+simplesmente levar. Minerando o próprio bloco funciona — e exige ser minerador.
 
-Detalhes, limites e o que ela não alcança: [`DISSUASAO.md`](DISSUASAO.md).
+**A atribuição.** O lease é assinado antes de o lote ser varrido. Quando a chave
+aparece na cadeia, `BlockIndexOf` diz em qual lote ela estava e o lease diz quem
+estava com ele: correspondência aritmética verificável, publicada antes do crime.
+
+Nenhuma delas exige capital de giro, nenhuma exige leilão de taxa, e nenhuma
+custa nada a quem é honesto.
+
+Detalhes, números e limites: [`DISSUASAO.md`](DISSUASAO.md).
 
 ## O risco residual, dito com todas as letras
 
-Uma fazenda grande que modifique o cliente e encontre a chave fica com ela. Não há
-mecanismo neste repositório que impeça isso, e o README diz isso ao participante
-em vez de fingir garantia.
+Um desertor que **seja minerador** transmite pelo próprio bloco e fica com a
+chave. Não há mecanismo neste repositório que impeça isso, e o README diz isso ao
+participante em vez de fingir garantia.
 
 O que existe é: a maioria não tem motivo, os poucos que têm são conhecíveis, o
-caminho honesto é o padrão, a traição é atribuível — e, acima de tudo, ela é
-recuperável enquanto o desertor depender da mempool pública.
+caminho honesto é o padrão, o desvio exige um ataque deliberado a mais, a traição
+é atribuível — e, para todo desertor que não seja minerador, ela rende menos que
+colaborar.
+
+E o dano de quem desertar mesmo assim é limitado pelo tamanho dele: um desertor só
+leva a chave se ela estiver no terreno que ele mesmo varreu, então em valor
+esperado ele tira do pool exatamente a fração de trabalho que fez. Um pool que
+fosse metade desertores ainda pagaria 86% ao participante honesto.
