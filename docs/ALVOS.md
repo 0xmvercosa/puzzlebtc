@@ -51,8 +51,6 @@ que se pode ganhar. Menor é melhor.
 
 ### Tempo até resolver, por tamanho de pool
 
-Placas topo de linha, equivalentes a uma RTX 4090 a 6,2 Gchaves/s:
-
 | alvo | 1.000 placas | 10.000 placas | 50.000 placas |
 |---|---|---|---|
 | **#140 kangaroo** | 8,5 anos | **10 meses** | **2,0 meses** |
@@ -62,20 +60,12 @@ Placas topo de linha, equivalentes a uma RTX 4090 a 6,2 Gchaves/s:
 | #145 kangaroo | 48 anos | 4,8 anos | 11,6 meses |
 | #150 kangaroo | 273 anos | 27 anos | 5,5 anos |
 
-Um pool real não é feito só de placa topo de linha. Com placas intermediárias,
-equivalentes a uma RTX 4060 a 1,24 Gchaves/s, os mesmos alvos ficam cinco vezes
-mais lentos:
+A leitura prática: **é em dez mil placas que #140 e #71 passam a resolver dentro
+de um ano.** Abaixo de mil, nenhum alvo aberto sai em tempo razoável.
 
-| alvo | 1.000 placas | 10.000 placas | 50.000 placas |
-|---|---|---|---|
-| **#140 kangaroo** | 43 anos | 4,3 anos | **10 meses** |
-| #71 força bruta | 30 anos | 3,0 anos | 7,3 meses |
-| #72 força bruta | 60 anos | 6,0 anos | 1,2 ano |
-| #145 kangaroo | 242 anos | 24 anos | 4,8 anos |
-
-A leitura prática: **abaixo de mil placas nenhum alvo aberto sai em tempo
-razoável.** A escala em que o projeto começa a fazer sentido é dez mil placas, e
-é aí que #140 e #71 passam a resolver dentro de um ano.
+<sub>Cálculo por placa equivalente a uma NVIDIA RTX 4090, medida em 6,214
+Gchaves/s pelo CUDACyclone. Operação de kangaroo assumida com custo equivalente
+ao de varrer uma chave, o que não foi medido.</sub>
 
 **O #140 é o melhor alvo aberto.** Paga o dobro do #71 por 1,41 vez o trabalho, o
 que dá 1,39 vez mais retorno por operação. Em números absolutos:

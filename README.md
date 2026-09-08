@@ -50,11 +50,17 @@ pessoas cobrindo terreno melhoram as suas chances a cada hora. Dez mil melhoram
 dez vezes mais rápido. E o seu pedaço do bolo não diminui, porque a sua fatia é
 proporcional ao seu trabalho, não dividida por cabeça.
 
-| pessoas no pool | cobertura por ano | quanto isso melhora a chance do seu próximo lote |
+| placas no pool | cobertura do #71 por ano | contra toda a concorrência visível |
 |---|---|---|
-| 100 | 0,33% | pouco, mas já é o dobro da concorrência visível |
-| 1.000 | 3,3% | 6,4 vezes toda a busca visível no #71 |
-| 10.000 | 33% | um terço do espaço em doze meses |
+| 100 | 1,7% | 3 vezes |
+| 1.000 | 16,6% | 32 vezes |
+| 10.000 | espaço inteiro em 7 meses | 320 vezes |
+| 50.000 | espaço inteiro em 6 semanas | 1.600 vezes |
+
+Contamos placas, não pessoas. Uma pessoa pode entrar com um notebook ou com um
+rig de seis placas, e nada impede que volte com mais depois.
+
+<sub>Cálculo por placa equivalente a uma NVIDIA RTX 4090.</sub>
 
 ## Como participar
 
@@ -245,13 +251,11 @@ Como #67 até #70 e o #135 já foram resolvidos, sobram estes alvos:
 | #72 | força bruta | US$ 576 mil | 12 anos | 1,2 ano | 2,9 meses |
 
 **O #140 é o melhor alvo aberto:** dobro do prêmio por 1,41 vez o trabalho, o que
-dá 1,39 vez mais retorno por operação.
+dá 1,39 vez mais retorno por operação. E é em dez mil placas que ele passa a
+resolver dentro de um ano.
 
-Os tempos acima assumem placas topo de linha. Com placas intermediárias multiplique
-por cinco: o #140 com dez mil delas sai em 4,3 anos, e com cinquenta mil em dez
-meses. A leitura que importa é a mesma nos dois casos: **abaixo de mil placas
-nenhum alvo aberto sai em tempo razoável, e é em dez mil que o projeto começa a
-resolver dentro de um ano.**
+<sub>Cálculo por placa equivalente a uma NVIDIA RTX 4090. Operação de kangaroo
+assumida com custo equivalente ao de varrer uma chave.</sub>
 
 O plano é lançar no #71, que é o que o motor atual faz, e migrar para o #140
 assim que o kangaroo existir. A análise completa está em
@@ -274,16 +278,18 @@ eles levariam 193 anos para cobrir o resto.
 
 É contra isso que um pool se compara:
 
-| pool | vezes a concorrência inteira | cobertura por ano |
+| pool | vezes a concorrência inteira | cobertura do #71 por ano |
 |---|---|---|
-| 100 placas | 0,6× | 0,33% |
-| 500 placas | 3,2× | 1,65% |
-| 1.000 placas | **6,4×** | 3,31% |
-| 5.000 placas | **32×** | 16,5% |
+| 100 placas | 3× | 1,7% |
+| 1.000 placas | **32×** | 16,6% |
+| 10.000 placas | **320×** | espaço inteiro em 7 meses |
 
-Mil placas fazem seis vezes o trabalho de todos os outros buscadores somados.
+Cem placas já fazem o triplo do trabalho de todos os outros buscadores somados.
 Não é um mercado saturado: é um espaço quase intocado sendo raspado por um
 punhado de máquinas.
+
+<sub>Cálculo por placa equivalente a uma NVIDIA RTX 4090. Concorrência medida
+pelos números públicos do btcpuzzle.info, que só enxerga quem reporta.</sub>
 
 Uma ressalva honesta: esse número é o que aquele site enxerga. Quem procura em
 silêncio não aparece ali, então trate como piso da concorrência, não como total.
@@ -297,9 +303,8 @@ Aqui está o motivo de existir um pool, e o motivo de chamar mais gente:
 | puzzle #71 | 0,3% ao ano | 3,3% ao ano | 33% ao ano |
 | puzzle #72 | 0,2% ao ano | 1,7% ao ano | 17% ao ano |
 
-Uma placa sozinha cobre 0,0003% do #71 em um ano. Mil placas cobrem 3,3%, o que
-já é uma chance de uma em trinta por ano. Dez mil cobrem um terço do espaço
-inteiro em doze meses.
+Uma placa sozinha cobre 0,0017% do #71 em um ano. Mil placas cobrem 16,6%. Dez
+mil cobrem o espaço inteiro em sete meses.
 
 E tem uma coisa que só um pool com registro de lotes consegue oferecer: **cada
 lote fechado aumenta a chance do próximo.** Como nenhum lote é entregue duas
