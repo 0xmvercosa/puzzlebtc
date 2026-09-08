@@ -33,6 +33,19 @@ const leaseAttempts = 32
 // blocks rather than refusing to hand out work.
 const claimSkipAttempts = 64
 
+// MaxLeaseBatch bounds how many blocks one request may lease.
+//
+// Batching exists because the block is sized for a CPU, not for a GPU. A block
+// that takes a four-core CPU about 48 minutes takes a high-end card 1.4 seconds,
+// so a card would otherwise open 62,000 connections a day and ten thousand cards
+// would mean seven thousand lease requests per second. At fifty blocks a request
+// that falls to a hundred and forty, which is an ordinary web service.
+//
+// Keeping the block small and batching the requests is what lets one block size
+// serve both, without making a ticket mean different amounts of work for
+// different people.
+const MaxLeaseBatch = 200
+
 // Config holds the operator's choices for one coordinator process.
 type Config struct {
 	// LeaseTTL is how long a worker has to return a block before it goes back
@@ -161,6 +174,50 @@ const (
 	TierReclaim = "reclaim"
 )
 
+// LeaseBatch hands a worker up to n random blocks in one call.
+//
+// Blocks are drawn independently, so a batch is not contiguous — a participant
+// works scattered ground, which is what keeps allocation unpredictable. Partial
+// success is normal and not an error: the caller gets what was available, and an
+// empty result means the campaign is exhausted.
+func (co *Coordinator) LeaseBatch(ctx context.Context, workerID string, n int) ([]*Lease, error) {
+	switch {
+	case workerID == "":
+		return nil, errors.New("coordinator: worker id is empty")
+	case n <= 0:
+		return nil, fmt.Errorf("coordinator: batch size %d must be positive", n)
+	case n > MaxLeaseBatch:
+		return nil, fmt.Errorf("coordinator: batch size %d exceeds the limit of %d", n, MaxLeaseBatch)
+	}
+
+	// One reclaim for the whole batch rather than one per block.
+	if _, err := co.db.ReclaimExpired(ctx, co.campaign.ID, co.now()); err != nil {
+		return nil, err
+	}
+
+	out := make([]*Lease, 0, n)
+	for i := 0; i < n; i++ {
+		lease, err := co.leaseOne(ctx, workerID)
+		if errors.Is(err, store.ErrNoBlockAvailable) {
+			break // hand back what we have; the caller decides whether to retry
+		}
+		if err != nil {
+			if len(out) > 0 {
+				// Blocks already leased are real work the worker can do. Losing
+				// them to an error on a later draw would strand them until the
+				// lease expires.
+				return out, nil
+			}
+			return nil, err
+		}
+		out = append(out, lease)
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNoBlockAvailable
+	}
+	return out, nil
+}
+
 // LeaseBlock hands a worker a uniformly random block that nobody holds.
 //
 // Randomness is the point, not an implementation detail: sequential handout
@@ -170,13 +227,17 @@ func (co *Coordinator) LeaseBlock(ctx context.Context, workerID string) (*Lease,
 	if workerID == "" {
 		return nil, errors.New("coordinator: worker id is empty")
 	}
-	now := co.now()
-
 	// Expired leases return to the pool before we look for a free index.
-	if _, err := co.db.ReclaimExpired(ctx, co.campaign.ID, now); err != nil {
+	if _, err := co.db.ReclaimExpired(ctx, co.campaign.ID, co.now()); err != nil {
 		return nil, err
 	}
+	return co.leaseOne(ctx, workerID)
+}
 
+// leaseOne draws and records a single block. It does not reclaim expired leases;
+// callers do that once per request so a batch pays for it only once.
+func (co *Coordinator) leaseOne(ctx context.Context, workerID string) (*Lease, error) {
+	now := co.now()
 	total := co.campaign.NumBlocksU64()
 	if total == 0 {
 		return nil, store.ErrNoBlockAvailable

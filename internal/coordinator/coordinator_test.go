@@ -313,3 +313,76 @@ func TestSolutionRecordedAndPaidOut(t *testing.T) {
 	t.Logf("finder=%s platform=%s helper_pool=%s across %d holders",
 		d.FinderSat, d.PlatformSat, d.HelperSat, len(d.Helpers))
 }
+
+// A batch must hand out distinct blocks, all of them leased to the asking
+// worker, in one round trip.
+func TestLeaseBatchReturnsDistinctBlocks(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+
+	leases, err := co.LeaseBatch(ctx, "rig", 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 40 {
+		t.Fatalf("got %d leases, want 40", len(leases))
+	}
+	seen := map[uint64]bool{}
+	tokens := map[string]bool{}
+	for _, l := range leases {
+		if seen[l.BlockIndex] {
+			t.Errorf("block %d appears twice in one batch", l.BlockIndex)
+		}
+		seen[l.BlockIndex] = true
+		if tokens[l.Token] {
+			t.Errorf("lease token reused across blocks")
+		}
+		tokens[l.Token] = true
+	}
+
+	// A second batch must not overlap the first.
+	more, err := co.LeaseBatch(ctx, "rig", 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range more {
+		if seen[l.BlockIndex] {
+			t.Errorf("block %d handed out in two batches", l.BlockIndex)
+		}
+	}
+}
+
+func TestLeaseBatchRejectsBadSizes(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+
+	if _, err := co.LeaseBatch(ctx, "w", 0); err == nil {
+		t.Error("a zero-size batch was accepted")
+	}
+	if _, err := co.LeaseBatch(ctx, "w", MaxLeaseBatch+1); err == nil {
+		t.Error("an oversized batch was accepted")
+	}
+}
+
+// Every block in a batch must be independently redeemable, with its own proof.
+func TestBatchedBlocksAreIndividuallyRedeemable(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t)
+
+	leases, err := co.LeaseBatch(ctx, "rig", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range leases {
+		if _, err := co.Submit(ctx, "rig", sweep(t, co, l)); err != nil {
+			t.Fatalf("block %d: %v", l.BlockIndex, err)
+		}
+	}
+	prog, err := co.Progress(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prog.CompletedBlocks != 3 || prog.Tickets != 3 {
+		t.Errorf("progress = %d blocks / %d tickets, want 3/3", prog.CompletedBlocks, prog.Tickets)
+	}
+}

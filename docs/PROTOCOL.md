@@ -17,8 +17,17 @@ GET  /healthz
 
 ```http
 POST /v1/lease
-{"worker_id": "alice"}
+{"worker_id": "alice", "count": 50}
 ```
+
+`count` maior que 1 devolve `{"leases": [...]}` em vez de um lease solto. Sem
+`count`, ou com `count` 1, a resposta continua sendo o objeto plano de sempre.
+
+**Peça em bloco se você tem GPU.** O lote é dimensionado para uma CPU fechar em
+cerca de 48 minutos, o que numa placa topo de linha dá 1,4 segundo. Uma
+requisição por lote seriam 62 mil conexões por dia só da sua máquina. Peça 50 ou
+100 de uma vez, trabalhe todos, e submeta um por um. O limite por requisição é
+200.
 
 ```json
 {
@@ -125,14 +134,24 @@ Vêm no lease e valem para aquele bloco. Não os embuta no worker.
 
 | campo | significado | default (blocos 2^40) |
 |---|---|---|
-| `witness_bits` | bits zero à esquerda que definem uma testemunha | 26 (~16.384/bloco) |
-| `buckets` | fatias para o teste de cobertura | 512 (~32 testemunhas cada) |
+| `witness_bits` | bits zero à esquerda que definem uma testemunha | 21 (~4.096/lote) |
+| `buckets` | fatias para o teste de cobertura | 128 (~32 testemunhas cada) |
 | `canaries` | quantos canários voltar | 4 |
 | `sample_size` | quantas testemunhas o servidor verifica | 64 |
 | `sigmas` | desvios abaixo da média que definem os pisos | 5 |
 
-`witness_bits = block_bits - 14` mira ~16.384 testemunhas por bloco: resolução
-estatística boa e ~128 KB por submissão.
+`witness_bits = block_bits - 12` mira ~4.096 testemunhas por lote, o que dá cerca
+de 32 KB por submissão. Os buckets caem junto com as testemunhas, e isso não é
+opcional: manter 512 buckets com 4.096 testemunhas põe a média em 8 por bucket,
+o piso de Poisson desaba para 1, e **cerca de 17% das submissões honestas passam
+a ser recusadas por engano.**
+
+O lote padrão é de 2³³ chaves, cerca de 8,6 bilhões: aproximadamente 48 minutos
+numa CPU de quatro núcleos, 13 segundos numa placa de entrada e 1,4 segundo numa
+topo de linha. Ele é dimensionado pela CPU de propósito, para que uma máquina
+comum consiga fechar um lote inteiro numa sessão. Quem tem mais capacidade pega
+mais lotes, nunca lotes maiores, para o ticket continuar valendo o mesmo trabalho
+para todo mundo.
 
 ## Limites
 

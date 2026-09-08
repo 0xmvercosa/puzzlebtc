@@ -60,18 +60,23 @@ Isso é o que mantém o ticket com o mesmo significado para todo mundo. Lote mai
 para quem tem máquina melhor quebraria a proporcionalidade do rateio, e a
 contabilidade perderia o sentido.
 
-Na campanha padrão o lote tem 2³⁹ chaves, cerca de 550 bilhões:
+Na campanha padrão o lote tem 2³³ chaves, cerca de 8,6 bilhões:
 
 | hardware | tempo por lote | lotes por dia |
 |---|---|---|
-| GTX 1660 / RTX 3050 | ~14 min | ~100 |
-| RTX 4060 | ~7 min | ~195 |
-| RTX 4090 | ~90 s | ~975 |
-| Rig com 6 placas | ~15 s | ~5.800 |
+| CPU 4 núcleos | ~48 min | ~30 |
+| GTX 1660 / RTX 3050 | ~13 s | ~6.500 |
+| RTX 4060 | ~7 s | ~12.500 |
+| RTX 4090 | ~1,4 s | ~62.500 |
+| Rig com 6 placas | ~0,2 s | ~375.000 |
 
-**Este projeto é para quem tem placa de vídeo.** Em CPU pura um lote levaria mais
-de um dia, então CPU não é forma de participar: serve para conferir que a
-instalação funciona, contra uma campanha de teste bem menor.
+O tamanho é escolhido pela CPU: uma máquina comum fecha um lote numa sessão de
+trabalho, sem precisar deixar ligado a noite toda para ver o primeiro ticket.
+
+Quem tem placa fecha lote em segundos, e por isso o cliente pede lotes **em
+bloco**, cinquenta ou cem por requisição. Sem isso uma placa topo de linha abriria
+62 mil conexões por dia. O lote continua do mesmo tamanho para todo mundo; o que
+muda é quantos você leva de cada vez.
 
 ## Pausar no meio de um lote
 

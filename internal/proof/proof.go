@@ -55,10 +55,15 @@ import (
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
 )
 
-// TargetWitnesses is how many witnesses DefaultParams aims for per block. It
-// buys the statistical resolution described above while keeping a submission
-// near 128 KB on the wire.
-const TargetWitnesses = 16384
+// TargetWitnesses is how many witnesses DefaultParams aims for per block.
+//
+// 4096 is a deliberate step down from an earlier 16384. Four separate costs fall
+// with it at once — wire size, JSON parse, bucket counting and the deep audit —
+// and the only thing bought by the larger figure was resolution: the smallest
+// detectable coverage gap moves from 0.2% to 0.8% of a block. A cheater who
+// trims 0.8% of their sweep saves 0.8% of their electricity, so that resolution
+// was never worth four times the cost of every submission.
+const TargetWitnesses = 4096
 
 // Params are the per-campaign proof settings. Workers must be told all of them:
 // a worker using a different WitnessBits produces a submission that cannot pass.
@@ -90,13 +95,15 @@ func DefaultParams(blockBits uint) Params {
 	// 2^blockBits / 2^(blockBits-14) = 2^14 witnesses, floored at difficulty 1
 	// so a witness is never simply "every key".
 	witnessBits := uint(1)
-	if blockBits > 15 {
-		witnessBits = blockBits - 14
+	if blockBits > 13 {
+		witnessBits = blockBits - 12 // 2^blockBits / 2^(blockBits-12) = 4096
 	}
 
-	// Keep buckets well below the key count, or a bucket spans fewer keys than
-	// it expects witnesses and the coverage test stops meaning anything.
-	buckets := uint32(512)
+	// Buckets must fall with the witness count. Holding 512 buckets at 4096
+	// witnesses puts the mean at 8 per bucket, which collapses the Poisson floor
+	// to 1 and false-rejects roughly 17% of honest submissions. At 128 buckets
+	// the mean is 32 and an empty bucket is a 1-in-10^14 event.
+	buckets := uint32(128)
 	if blockBits < 12 {
 		buckets = uint32(1) << (blockBits / 2)
 	}

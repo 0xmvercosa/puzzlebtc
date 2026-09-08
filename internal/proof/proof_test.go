@@ -328,16 +328,19 @@ func equalInt(a, b []int) bool {
 }
 
 func TestParamsThresholds(t *testing.T) {
-	p := DefaultParams(40)
-	if p.WitnessBits != 26 {
-		t.Errorf("witness_bits = %d, want 26 for 2^40 blocks", p.WitnessBits)
+	p := DefaultParams(33)
+	if p.WitnessBits != 21 {
+		t.Errorf("witness_bits = %d, want 21 for 2^33 blocks", p.WitnessBits)
 	}
-	blockLen := new(big.Int).Lsh(big.NewInt(1), 40)
+	if p.Buckets != 128 {
+		t.Errorf("buckets = %d, want 128", p.Buckets)
+	}
+	blockLen := new(big.Int).Lsh(big.NewInt(1), 33)
 	if got := p.ExpectedWitnesses(blockLen); got != TargetWitnesses {
 		t.Errorf("expected witnesses = %v, want %d", got, TargetWitnesses)
 	}
-	// 5 sigma below 16384 is ~15744; below 32 per bucket is ~3.
-	if min := p.MinTotal(blockLen); min < 15000 || min > 16000 {
+	// 5 sigma below 4096 is ~3776; the per-bucket mean is 32.
+	if min := p.MinTotal(blockLen); min < 3700 || min > 4000 {
 		t.Errorf("min total = %d, outside the expected 5-sigma band", min)
 	}
 	if min := p.MinPerBucket(blockLen); min < 1 || min > 10 {
@@ -402,6 +405,11 @@ func TestDefaultParamsValidForEveryBlockSize(t *testing.T) {
 			continue
 		}
 		blockLen := new(big.Int).Lsh(big.NewInt(1), bits)
+		// Every bucket must expect enough witnesses that an empty one is real
+		// evidence, not variance.
+		if lam := p.ExpectedWitnesses(blockLen) / float64(p.Buckets); bits >= 20 && lam < 16 {
+			t.Errorf("block_bits=%d: only %.1f witnesses per bucket; the coverage test would false-reject", bits, lam)
+		}
 		if got := p.ExpectedWitnesses(blockLen); got < 1 {
 			t.Errorf("block_bits=%d: expects %.2f witnesses per block, too few to police", bits, got)
 		}

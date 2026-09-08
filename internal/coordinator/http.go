@@ -46,6 +46,14 @@ func (s *Server) Routes() *http.ServeMux {
 
 type leaseRequest struct {
 	WorkerID string `json:"worker_id"`
+	// Count asks for several blocks in one call. Zero or one behaves as before.
+	Count int `json:"count,omitempty"`
+}
+
+// leaseBatchResponse is returned when Count > 1, so a single-block client keeps
+// seeing the flat object it already parses.
+type leaseBatchResponse struct {
+	Leases []*Lease `json:"leases"`
 }
 
 func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +63,20 @@ func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.WorkerID) == "" {
 		writeError(w, http.StatusBadRequest, "missing_worker_id", "worker_id is required")
+		return
+	}
+
+	if req.Count > 1 {
+		leases, err := s.co.LeaseBatch(r.Context(), req.WorkerID, req.Count)
+		switch {
+		case errors.Is(err, store.ErrNoBlockAvailable):
+			writeError(w, http.StatusServiceUnavailable, "no_block_available", err.Error())
+		case err != nil:
+			s.log.Error("lease batch failed", "worker", req.WorkerID, "count", req.Count, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal", "could not allocate blocks")
+		default:
+			writeJSON(w, http.StatusOK, leaseBatchResponse{Leases: leases})
+		}
 		return
 	}
 
