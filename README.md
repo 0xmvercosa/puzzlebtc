@@ -391,14 +391,26 @@ tinha o lote. Não é garantia matemática, e o README não vai fingir que é.
 
 ### Onde isso ainda falha
 
-- **Cliente modificado.** Quem alterar o código para não enviar a transação
-  tentaria ficar com o prêmio, e **não existe mecanismo aqui que impeça isso.**
-  O que existe: para quase todo participante o ataque não compensa, porque o
-  ganho esperado é a fatia dele do pool vezes o prêmio, e para quem tem uma placa
-  isso são algumas centenas de dólares; o binário oficial é assinado e com build
-  reproduzível, então rodar o modificado é ato deliberado; e o registro de quem
-  tinha cada lote é público, num dos endereços mais observados do Bitcoin. A
-  análise completa, incluindo o que foi testado e descartado, está em
+- **Cliente modificado.** Nada impede tecnicamente alguém de apagar o trecho de
+  resgate e ficar com a chave. O que existe é uma defesa diferente: **roubar não
+  funciona.**
+
+  Uma chave guardada não vale nada. Para virar dinheiro o ladrão tem que
+  transmitir uma transação, e toda transação assinada publica a chave pública.
+  A partir daí a chave privada está num intervalo conhecido, e o pool a recupera
+  em **onze segundos** num rig — contra os dez minutos que a transação dele leva
+  para confirmar. O pool então transmite uma concorrente.
+
+  E o pool se compromete publicamente a **leiloar até o valor integral do prêmio
+  em taxa antes de deixar um desertor ficar com ele.** É crível porque é ruim
+  para nós: preferimos que o minerador fique com o dinheiro a premiar a
+  deserção. Para o ladrão, deixa de ser meio milhão contra a chance de ser pego,
+  e passa a ser meio milhão contra a certeza de não sobrar nada.
+
+  Escapar disso exige submeter direto a um minerador, sem passar pela mempool.
+  Isso exige conta, contrato e identificação num pool de mineração — que um
+  desertor anônimo não tem e o operador tem. Ver
+  [`docs/DISSUASAO.md`](docs/DISSUASAO.md) e
   [`docs/CLIENTE_MODIFICADO.md`](docs/CLIENTE_MODIFICADO.md).
 - **A distribuição depende de quem opera.** O prêmio chega a um endereço
   controlado pelo operador do pool, que executa o rateio. O ledger de tickets é

@@ -78,6 +78,24 @@ famoso é um problema real e permanente.
 corta o ganho da traição de US$ 261 mil para US$ 148 mil, e custa US$ 113 mil à
 plataforma. Atenua, não resolve.
 
+## A defesa que funciona: tornar o roubo inútil
+
+Todas as opções acima tentam **impedir** o roubo, e todas falham. A que funciona
+inverte a pergunta: deixa o roubo acontecer e faz com que ele não pague.
+
+Uma chave guardada não vale nada. Para virar dinheiro o ladrão precisa transmitir,
+e transmitir publica a chave pública. Dali em diante a privada está num intervalo
+conhecido, e o pool a recupera em onze segundos num rig — contra os dez minutos
+que a transação dele leva para confirmar.
+
+Somado ao compromisso público de leiloar o prêmio inteiro em taxa antes de deixar
+um desertor ficar com ele, o ganho esperado do roubo vai a perto de zero.
+
+Custa quase nada: o kangaroo já é necessário para campanhas de chave exposta, e a
+relação com minerador já é requisito do resgate honesto. Não exige capital de giro.
+
+Detalhes, limites e o que ela não alcança: [`DISSUASAO.md`](DISSUASAO.md).
+
 ## O risco residual, dito com todas as letras
 
 Uma fazenda grande que modifique o cliente e encontre a chave fica com ela. Não há
@@ -85,4 +103,5 @@ mecanismo neste repositório que impeça isso, e o README diz isso ao participan
 em vez de fingir garantia.
 
 O que existe é: a maioria não tem motivo, os poucos que têm são conhecíveis, o
-caminho honesto é o padrão, e a traição é atribuível e difícil de monetizar.
+caminho honesto é o padrão, a traição é atribuível — e, acima de tudo, ela é
+recuperável enquanto o desertor depender da mempool pública.
