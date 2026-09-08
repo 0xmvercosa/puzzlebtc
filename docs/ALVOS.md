@@ -28,33 +28,42 @@ disponível só para eles.
 | #140 | 7,0 × 10⁴¹ | 1,7 × 10²¹ | 4 × 10²⁰ vezes |
 | #150 | 7,1 × 10⁴⁴ | 5,3 × 10²² | 1 × 10²² vezes |
 
-## Comparando alvos pelo que interessa
+## Quais alvos continuam abertos
+
+Os puzzles #67, #68, #69, #70 e #135 já foram resolvidos. Isso deixa:
+
+- **Força bruta:** o menor aberto é o **#71**.
+- **Kangaroo:** o menor aberto é o **#140**, já que o #135 caiu.
+
+## Comparando os alvos abertos
 
 A métrica útil é operações por dólar de prêmio: quanto trabalho custa cada dólar
 que se pode ganhar. Menor é melhor.
 
-| alvo | algoritmo | operações | prêmio | ops por dólar |
-|---|---|---|---|---|
-| #67 | força bruta | 7,4 × 10¹⁹ | US$ 536 mil | 1,4 × 10¹⁴ |
-| #135 | kangaroo | 3,0 × 10²⁰ | US$ 1,08 mi | 2,7 × 10¹⁴ |
-| #140 | kangaroo | 1,7 × 10²¹ | US$ 1,12 mi | 1,5 × 10¹⁵ |
-| #71 | força bruta | 1,2 × 10²¹ | US$ 568 mil | 2,1 × 10¹⁵ |
-| #72 | força bruta | 2,4 × 10²¹ | US$ 576 mil | 4,1 × 10¹⁵ |
-| #145 | kangaroo | 9,4 × 10²¹ | US$ 1,16 mi | 8,1 × 10¹⁵ |
+| alvo | algoritmo | operações | prêmio | ops por dólar | 1.000 placas |
+|---|---|---|---|---|---|
+| **#140** | **kangaroo** | 1,67 × 10²¹ | **US$ 1,12 mi** | **1,49 × 10¹⁵** | 8,5 anos |
+| #71 | força bruta | 1,18 × 10²¹ | US$ 568 mil | 2,08 × 10¹⁵ | 6,0 anos |
+| #72 | força bruta | 2,36 × 10²¹ | US$ 576 mil | 4,10 × 10¹⁵ | 12 anos |
+| #73 | força bruta | 4,72 × 10²¹ | US$ 584 mil | 8,09 × 10¹⁵ | 24 anos |
+| #145 | kangaroo | 9,44 × 10²¹ | US$ 1,16 mi | 8,14 × 10¹⁵ | 48 anos |
+| #150 | kangaroo | 5,34 × 10²² | US$ 1,20 mi | 4,45 × 10¹⁶ | 273 anos |
 
-Tempo até resolver, com operação de kangaroo custando aproximadamente o mesmo que
-uma chave varrida:
+**O #140 é o melhor alvo aberto.** Paga o dobro do #71 por 1,41 vez o trabalho, o
+que dá 1,39 vez mais retorno por operação. Em números absolutos:
 
-| alvo | 1.000 placas | 10.000 placas |
+| | #140 kangaroo | #71 força bruta |
 |---|---|---|
-| #67 força bruta | 5 meses | 2 semanas |
-| #135 kangaroo | 1,5 ano | 2 meses |
-| #71 força bruta | 6 anos | 7 meses |
-| #140 kangaroo | 8,5 anos | 10 meses |
-| #145 kangaroo | 48 anos | 5 anos |
+| prêmio | US$ 1.120.000 | US$ 568.000 |
+| operações | 1,67 × 10²¹ | 1,18 × 10²¹ |
+| 1.000 placas | 8,5 anos | 6,0 anos |
+| 5.000 placas | 1,7 ano | 1,2 ano |
+| 10.000 placas | 10 meses | 7 meses |
 
-**#135 é o melhor alvo de puzzle alto por uma margem larga**, e é competitivo com
-os puzzles baixos de força bruta enquanto paga o dobro. **#140 é melhor que #71.**
+A vantagem de 1,39 vez é real mas não é esmagadora, e o #140 custa um motor de
+busca inteiro que ainda não existe. A diferença que pesa mais na prática pode ser
+outra: **o prêmio anunciado é o dobro**, e isso importa para atrair participante
+muito além do que a razão matemática sugere.
 
 ## O que precisa ser confirmado antes de escolher
 
@@ -68,9 +77,14 @@ extrair a chave pública dela. Um alvo sem pubkey exposta é força bruta pura, 
 tabela acima não se aplica a ele.
 
 **Quais puzzles seguem em aberto.** Da mesma forma, o saldo de cada endereço
-precisa ser conferido na cadeia. A estrutura de prêmio usada aqui (puzzle n
-valendo cerca de n/10 BTC) segue o que se sabe do desafio, e também precisa ser
-confirmada.
+precisa ser conferido na cadeia antes de abrir campanha. A lista de resolvidos
+usada aqui (todos até #70, mais os múltiplos de 5 até #135) veio de informação
+repassada, não de verificação na cadeia feita neste repositório.
+
+**O custo real de uma operação de kangaroo.** As tabelas de tempo assumem que ela
+custa aproximadamente o mesmo que derivar e comparar uma chave. É uma
+aproximação razoável — as duas fazem aritmética de curva e um teste barato — mas
+não foi medida. Um fator de 2 ou 3 aqui muda todos os prazos.
 
 ## O que muda no projeto para atacar um alvo de kangaroo
 
@@ -99,14 +113,25 @@ precisa ser escrito é o motor de busca e o formato da prova.
 
 ## Recomendação
 
-Abrir a primeira campanha em **força bruta no menor puzzle ainda aberto**. É o
-que o código já faz, é onde o custo por dólar é menor, e permite lançar sem
-construir um segundo motor.
+**Lançar no #71 por força bruta. Construir o kangaroo em seguida e migrar para o
+#140.**
 
-Tratar **#135 por kangaroo** como a segunda campanha, e planejá-la desde já: é o
-melhor alvo de prêmio alto por margem confortável, e o coordenador já tem quase
-tudo de que ela precisa.
+O motivo de não começar direto no #140, apesar de ele ser o melhor alvo, é que
+ele custa um motor de busca inteiro antes do primeiro participante entrar. O #71
+usa o que já está pronto e testado, permite validar coordenação, verificação,
+tickets e resgate com gente real, e custa apenas 1,39 vez mais trabalho por dólar
+enquanto isso acontece.
 
-Não abrir campanha em puzzle alto sem pubkey exposta. Sem o atalho do kangaroo
-esses alvos são inatingíveis por qualquer quantidade de hardware, e anunciá-los
-seria vender bilhete sem sorteio.
+Assim que o kangaroo existir, o #140 passa a ser o alvo principal: dobro do
+prêmio, melhor retorno por operação, e um argumento de recrutamento mais forte.
+
+Duas coisas que **não** devem ser feitas:
+
+**Não abrir campanha em puzzle alto sem confirmar que a chave pública está
+exposta.** Sem o atalho do kangaroo esses alvos são inatingíveis por qualquer
+quantidade de hardware, e anunciá-los seria vender bilhete sem sorteio.
+
+**Não anunciar prazo.** As tabelas de tempo acima assumem que a operação de
+kangaroo custa aproximadamente o mesmo que uma chave varrida, e isso não foi
+medido. Também assumem que ninguém de fora acha primeiro. São dimensionamento
+interno, não promessa.

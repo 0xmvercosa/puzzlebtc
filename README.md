@@ -161,21 +161,20 @@ assinatura. Com a chave pública conhecida o problema deixa de ser busca cega:
 passa a ser logaritmo discreto num intervalo, que o algoritmo kangaroo resolve em
 raiz quadrada do trabalho. No #140 isso é 4 × 10²⁰ vezes menos operações.
 
-Isso muda a lista de alvos bons. Medindo por operações por dólar de prêmio:
+Como #67 até #70 e o #135 já foram resolvidos, sobram estes alvos:
 
 | alvo | algoritmo | operações | prêmio | 1.000 placas |
 |---|---|---|---|---|
-| #67 | força bruta | 7,4 × 10¹⁹ | US$ 536 mil | 5 meses |
-| #135 | kangaroo | 3,0 × 10²⁰ | US$ 1,08 mi | 1,5 ano |
-| #71 | força bruta | 1,2 × 10²¹ | US$ 568 mil | 6 anos |
-| #140 | kangaroo | 1,7 × 10²¹ | US$ 1,12 mi | 8,5 anos |
+| **#140** | **kangaroo** | 1,67 × 10²¹ | **US$ 1,12 mi** | 8,5 anos |
+| #71 | força bruta | 1,18 × 10²¹ | US$ 568 mil | 6,0 anos |
+| #72 | força bruta | 2,36 × 10²¹ | US$ 576 mil | 12 anos |
 
-O #135 paga o dobro do #71 e resolve em um quarto do tempo. O #140 também é
-melhor alvo que o #71.
+**O #140 é o melhor alvo aberto:** dobro do prêmio por 1,41 vez o trabalho, o que
+dá 1,39 vez mais retorno por operação. Com 5.000 placas ele sai em 1,7 ano.
 
-Kangaroo é outro motor de busca, e o cliente atual não faz isso ainda. A análise
-completa, incluindo o que precisa ser confirmado na cadeia antes de abrir uma
-campanha dessas, está em [`docs/ALVOS.md`](docs/ALVOS.md).
+O plano é lançar no #71, que é o que o motor atual faz, e migrar para o #140
+assim que o kangaroo existir. A análise completa está em
+[`docs/ALVOS.md`](docs/ALVOS.md).
 
 ### Quem mais está procurando
 
