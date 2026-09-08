@@ -58,6 +58,11 @@ type Config struct {
 	DeepAuditRate float64
 	// Split is the prize distribution policy.
 	Split payout.Split
+	// CanaryRate is the share of leases that hand out a funded claim canary
+	// instead of a random block, in [0,1]. Every canary costs an on-chain
+	// funding transaction, so this trades money for how quickly a modified
+	// client is caught. Zero disables the mechanism.
+	CanaryRate float64
 	// CanarySecret seeds canary placement and witness sampling. Losing it
 	// invalidates every outstanding lease; leaking it lets a worker fake the
 	// canary test.
@@ -69,6 +74,7 @@ func DefaultConfig() Config {
 	return Config{
 		LeaseTTL:      2 * time.Hour,
 		DeepAuditRate: 0.02,
+		CanaryRate:    0.01,
 		Split:         payout.DefaultSplit(),
 	}
 }
@@ -96,6 +102,9 @@ func New(ctx context.Context, db *store.DB, c *keyspace.Campaign, p proof.Params
 	}
 	if cfg.DeepAuditRate < 0 || cfg.DeepAuditRate > 1 {
 		return nil, errors.New("coordinator: deep_audit_rate must be in [0,1]")
+	}
+	if cfg.CanaryRate < 0 || cfg.CanaryRate > 1 {
+		return nil, errors.New("coordinator: canary_rate must be in [0,1]")
 	}
 	v, err := proof.NewVerifier(c, p, cfg.CanarySecret)
 	if err != nil {
@@ -218,6 +227,9 @@ func (co *Coordinator) LeaseBatch(ctx context.Context, workerID string, n int) (
 	return out, nil
 }
 
+// ErrBanned is returned when a worker excluded from the pool asks for work.
+var ErrBanned = errors.New("coordinator: worker is excluded from this pool")
+
 // LeaseBlock hands a worker a uniformly random block that nobody holds.
 //
 // Randomness is the point, not an implementation detail: sequential handout
@@ -237,10 +249,28 @@ func (co *Coordinator) LeaseBlock(ctx context.Context, workerID string) (*Lease,
 // leaseOne draws and records a single block. It does not reclaim expired leases;
 // callers do that once per request so a batch pays for it only once.
 func (co *Coordinator) leaseOne(ctx context.Context, workerID string) (*Lease, error) {
+	// A banned worker gets no blocks. It is free to keep searching the keyspace
+	// on its own, which is exactly the intended outcome: it loses the pool's
+	// coordination — the guarantee that no ground is repeated — and goes back to
+	// competing against the whole space alone.
+	if banned, reason, err := co.db.IsBanned(ctx, workerID); err != nil {
+		return nil, err
+	} else if banned {
+		return nil, fmt.Errorf("%w: %s", ErrBanned, reason)
+	}
+
 	now := co.now()
 	total := co.campaign.NumBlocksU64()
 	if total == 0 {
 		return nil, store.ErrNoBlockAvailable
+	}
+
+	// A funded canary block, when one is dealt, replaces the random draw.
+	if idx, ok := co.tryDealCanary(ctx, workerID); ok {
+		if lease, err := co.recordLease(ctx, workerID, idx, TierFresh, now); err == nil {
+			return lease, nil
+		}
+		// The canary block was already taken; fall through to a normal draw.
 	}
 
 	for attempt := 0; attempt < leaseAttempts; attempt++ {
@@ -257,27 +287,7 @@ func (co *Coordinator) leaseOne(ctx context.Context, workerID string) (*Lease, e
 		if taken {
 			continue // already leased or already swept; roll again
 		}
-
-		blk, err := co.campaign.BlockAt(index)
-		if err != nil {
-			return nil, err
-		}
-		watchlist, err := co.verifier.Watchlist(blk)
-		if err != nil {
-			return nil, err
-		}
-		return &Lease{
-			CampaignID: co.campaign.ID,
-			BlockIndex: index,
-			LoKeyHex:   blk.Lo.Text(16),
-			HiKeyHex:   blk.Hi.Text(16),
-			Length:     blk.Len.String(),
-			Token:      token,
-			ExpiresAt:  now.Add(co.cfg.LeaseTTL).Unix(),
-			Params:     co.verifier.Params(),
-			Watchlist:  watchlist,
-			Tier:       tier,
-		}, nil
+		return co.buildLease(index, token, tier, now)
 	}
 	return nil, fmt.Errorf("%w after %d attempts: the campaign keyspace is effectively exhausted",
 		store.ErrNoBlockAvailable, leaseAttempts)
@@ -309,6 +319,49 @@ func (co *Coordinator) pickIndex(total uint64) (uint64, string) {
 	// rather than refuse work.
 	return draw(), TierReclaim
 }
+
+// recordLease claims a specific index for a worker and builds its lease.
+func (co *Coordinator) recordLease(ctx context.Context, workerID string, index uint64, tier string, now time.Time) (*Lease, error) {
+	token, err := newToken()
+	if err != nil {
+		return nil, err
+	}
+	taken, err := co.db.TryLease(ctx, co.campaign.ID, index, workerID, token, now, co.cfg.LeaseTTL)
+	if err != nil {
+		return nil, err
+	}
+	if taken {
+		return nil, store.ErrNoBlockAvailable
+	}
+	return co.buildLease(index, token, tier, now)
+}
+
+// buildLease assembles the lease a worker receives for an already-claimed index.
+func (co *Coordinator) buildLease(index uint64, token, tier string, now time.Time) (*Lease, error) {
+	blk, err := co.campaign.BlockAt(index)
+	if err != nil {
+		return nil, err
+	}
+	watchlist, err := co.verifier.Watchlist(blk)
+	if err != nil {
+		return nil, err
+	}
+	return &Lease{
+		CampaignID: co.campaign.ID,
+		BlockIndex: index,
+		LoKeyHex:   blk.Lo.Text(16),
+		HiKeyHex:   blk.Hi.Text(16),
+		Length:     blk.Len.String(),
+		Token:      token,
+		ExpiresAt:  now.Add(co.cfg.LeaseTTL).Unix(),
+		Params:     co.verifier.Params(),
+		Watchlist:  watchlist,
+		Tier:       tier,
+	}, nil
+}
+
+// mrandFloat is a package-level draw, safe for concurrent use.
+func mrandFloat() float64 { return mrand.Float64() }
 
 func newToken() (string, error) {
 	var b [16]byte

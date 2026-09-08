@@ -59,3 +59,18 @@ func TestLeadingZeroBits(t *testing.T) {
 		t.Errorf("0x000f...: got %d want 12", got)
 	}
 }
+
+// Anchored on the puzzle addresses, which are public: if this drifts, an
+// operator would fund a canary at the wrong address and lose the money.
+func TestHash160ToAddress(t *testing.T) {
+	cases := []struct{ privHex, want string }{
+		{"1", "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"},          // puzzle #1
+		{"22382facd0", "1HBtApAFA9B2YZw3G2YKSMCtb3dVnjuNe2"}, // puzzle #38
+	}
+	for _, c := range cases {
+		priv, _ := new(big.Int).SetString(c.privHex, 16)
+		if got := Hash160ToAddress(PubKeyHash160(priv)); got != c.want {
+			t.Errorf("key 0x%s: got %s want %s", c.privHex, got, c.want)
+		}
+	}
+}

@@ -392,11 +392,13 @@ tinha o lote. Não é garantia matemática, e o README não vai fingir que é.
 ### Onde isso ainda falha
 
 - **Cliente modificado.** Quem alterar o código para não enviar a transação
-  consegue ficar com o prêmio. Contra isso: builds reproduzíveis e releases
-  assinados, para conferir que o binário bate com o código; e o registro público
-  de quem estava com cada lote. Os endereços do puzzle estão entre os mais
-  observados do Bitcoin, então moeda que se mova sem ninguém reportar identifica
-  na hora quem tinha aquele lote.
+  tentaria ficar com o prêmio. Contra isso existe o **canário de resgate**: o
+  pool planta, em alguns lotes, uma chave de um endereço com bitcoin de verdade.
+  O cliente que recebe esse lote é obrigado a executar o resgate inteiro sobre
+  dinheiro que está realmente lá, e o pool confere na cadeia. Não apareceu
+  transação, o cliente está modificado, e o participante perde acesso aos lotes
+  antes de ter chance de encontrar qualquer coisa. Ver
+  [`docs/CANARIO.md`](docs/CANARIO.md).
 - **A distribuição depende de quem opera.** O prêmio chega a um endereço
   controlado pelo operador do pool, que executa o rateio. O ledger de tickets é
   aberto para você conferir quanto lhe cabe, mas o pagamento em si depende do

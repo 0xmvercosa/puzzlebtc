@@ -62,3 +62,37 @@ func leadingZeros8(b byte) int {
 	}
 	return n
 }
+
+// base58Alphabet is Bitcoin's, which omits the characters that look alike.
+const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+// Hash160ToAddress renders a HASH160 as a mainnet P2PKH address.
+//
+// The coordinator needs this only to tell an operator where to send a canary's
+// funding — the hot paths compare HASH160 directly and never touch Base58.
+func Hash160ToAddress(h Hash160) string {
+	payload := append([]byte{0x00}, h[:]...) // 0x00 = mainnet P2PKH
+	first := sha256.Sum256(payload)
+	second := sha256.Sum256(first[:])
+	full := append(payload, second[:4]...)
+
+	x := new(big.Int).SetBytes(full)
+	base := big.NewInt(58)
+	mod := new(big.Int)
+	var out []byte
+	for x.Sign() > 0 {
+		x.DivMod(x, base, mod)
+		out = append(out, base58Alphabet[mod.Int64()])
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	// Every leading zero byte becomes a leading '1'.
+	for _, b := range full {
+		if b != 0 {
+			break
+		}
+		out = append([]byte{base58Alphabet[0]}, out...)
+	}
+	return string(out)
+}

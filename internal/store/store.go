@@ -125,6 +125,52 @@ CREATE TABLE IF NOT EXISTS participant_address_history (
   changed_at  INTEGER NOT NULL
 );
 
+-- Claim canaries: the mechanism that catches a modified client BEFORE it can
+-- steal a prize, rather than after.
+--
+-- The rescue path in an honest client runs exactly once in its life, on the day
+-- it finds the key. Until then a client that has had that path deleted is
+-- indistinguishable from an honest one, so there is nothing to observe. A claim
+-- canary removes that asymmetry: the operator derives a key inside a block,
+-- funds its address with real bitcoin, and plants it. A client sweeping that
+-- block must run the whole rescue path — build, sign, submit — on money that is
+-- actually there. The operator then watches the chain.
+--
+-- No transaction appears, the client is modified. It loses access to blocks and
+-- goes back to searching the whole keyspace alone, which is the point: the
+-- exclusion has to happen before the theft, not after.
+--
+-- The private key is never stored here. The operator derives it from the block
+-- and offset when funding, and can derive it again; keeping it in the
+-- coordinator's database would put every canary's funds one breach away.
+CREATE TABLE IF NOT EXISTS claim_canaries (
+  campaign_id  TEXT    NOT NULL REFERENCES campaigns(id),
+  block_index  INTEGER NOT NULL,
+  key_offset   INTEGER NOT NULL,
+  address      TEXT    NOT NULL,
+  funded_sat   INTEGER NOT NULL,
+  funding_txid TEXT    NOT NULL,
+  -- armed -> dealt -> claimed | failed
+  state        TEXT    NOT NULL DEFAULT 'armed',
+  worker_id    TEXT    NOT NULL DEFAULT '',
+  dealt_at     INTEGER,
+  deadline     INTEGER,
+  spend_txid   TEXT    NOT NULL DEFAULT '',
+  PRIMARY KEY (campaign_id, block_index)
+);
+
+CREATE INDEX IF NOT EXISTS canaries_armed ON claim_canaries(campaign_id, state);
+CREATE INDEX IF NOT EXISTS canaries_due   ON claim_canaries(state, deadline);
+
+-- Workers excluded from leasing. A ban is a statement that this identity failed
+-- a check that honest software passes, so it stops receiving work.
+CREATE TABLE IF NOT EXISTS bans (
+  worker_id  TEXT PRIMARY KEY,
+  reason     TEXT NOT NULL,
+  evidence   TEXT NOT NULL DEFAULT '',
+  banned_at  INTEGER NOT NULL
+);
+
 -- Third-party scan claims: ranges somebody says they already searched. These are
 -- NEVER treated as swept — no proof this project accepts backs them. They only
 -- push those blocks to the back of the allocation queue.
@@ -409,6 +455,171 @@ func (db *DB) GetSolution(ctx context.Context, campaignID string) (*Solution, er
 	}
 	s.BlockIndex = uint64(idx)
 	return &s, nil
+}
+
+// Claim canary lifecycle states.
+const (
+	CanaryArmed   = "armed"   // funded and waiting to be dealt to someone
+	CanaryDealt   = "dealt"   // a worker holds the block; the clock is running
+	CanaryClaimed = "claimed" // the spend was seen on chain: the client is honest
+	CanaryFailed  = "failed"  // the deadline passed with no spend
+)
+
+// ArmCanary records a funded canary, ready to be dealt with a block.
+func (db *DB) ArmCanary(ctx context.Context, campaignID string, blockIndex, offset, fundedSat uint64, address, fundingTxid string) error {
+	if address == "" || fundingTxid == "" {
+		return errors.New("store: a canary needs both an address and the txid that funded it")
+	}
+	if fundedSat == 0 {
+		return errors.New("store: a canary funded with nothing tests nothing; a client that ignores it loses nothing either")
+	}
+	_, err := db.sql.ExecContext(ctx, `
+		INSERT INTO claim_canaries (campaign_id, block_index, key_offset, address, funded_sat, funding_txid, state)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(campaign_id, block_index) DO NOTHING`,
+		campaignID, int64(blockIndex), int64(offset), address, int64(fundedSat), fundingTxid, CanaryArmed)
+	if err != nil {
+		return fmt.Errorf("store: arm canary: %w", err)
+	}
+	return nil
+}
+
+// Canary is a planted claim test.
+type Canary struct {
+	BlockIndex uint64
+	KeyOffset  uint64
+	Address    string
+	FundedSat  uint64
+	State      string
+	WorkerID   string
+	Deadline   int64
+}
+
+// TakeArmedCanary claims one armed canary for dealing, marking it dealt to
+// workerID with a deadline. Returns nil when none is armed.
+//
+// The read and the state change are one transaction so two simultaneous lease
+// requests cannot be handed the same canary block.
+func (db *DB) TakeArmedCanary(ctx context.Context, campaignID, workerID string, now time.Time, window time.Duration) (*Canary, error) {
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("store: begin: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var c Canary
+	var idx, off, sat int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT block_index, key_offset, address, funded_sat FROM claim_canaries
+		WHERE campaign_id = ? AND state = ? LIMIT 1`, campaignID, CanaryArmed).
+		Scan(&idx, &off, &c.Address, &sat)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: take canary: %w", err)
+	}
+	c.BlockIndex, c.KeyOffset, c.FundedSat = uint64(idx), uint64(off), uint64(sat)
+	c.WorkerID, c.State = workerID, CanaryDealt
+	c.Deadline = now.Add(window).Unix()
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE claim_canaries SET state = ?, worker_id = ?, dealt_at = ?, deadline = ?
+		WHERE campaign_id = ? AND block_index = ? AND state = ?`,
+		CanaryDealt, workerID, now.Unix(), c.Deadline, campaignID, idx, CanaryArmed); err != nil {
+		return nil, fmt.Errorf("store: mark canary dealt: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("store: commit canary: %w", err)
+	}
+	return &c, nil
+}
+
+// CanaryForBlock returns the canary planted in a block, if any.
+func (db *DB) CanaryForBlock(ctx context.Context, campaignID string, blockIndex uint64) (*Canary, error) {
+	var c Canary
+	var idx, off, sat int64
+	var deadline sql.NullInt64
+	err := db.sql.QueryRowContext(ctx, `
+		SELECT block_index, key_offset, address, funded_sat, state, worker_id, deadline
+		FROM claim_canaries WHERE campaign_id = ? AND block_index = ?`, campaignID, int64(blockIndex)).
+		Scan(&idx, &off, &c.Address, &sat, &c.State, &c.WorkerID, &deadline)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: canary for block: %w", err)
+	}
+	c.BlockIndex, c.KeyOffset, c.FundedSat = uint64(idx), uint64(off), uint64(sat)
+	c.Deadline = deadline.Int64
+	return &c, nil
+}
+
+// SettleCanary records the outcome of a canary once the chain has been checked.
+func (db *DB) SettleCanary(ctx context.Context, campaignID string, blockIndex uint64, claimed bool, spendTxid string) error {
+	state := CanaryFailed
+	if claimed {
+		state = CanaryClaimed
+	}
+	_, err := db.sql.ExecContext(ctx, `
+		UPDATE claim_canaries SET state = ?, spend_txid = ?
+		WHERE campaign_id = ? AND block_index = ? AND state = ?`,
+		state, spendTxid, campaignID, int64(blockIndex), CanaryDealt)
+	if err != nil {
+		return fmt.Errorf("store: settle canary: %w", err)
+	}
+	return nil
+}
+
+// CanariesDue lists dealt canaries whose deadline has passed, for the chain
+// checker to resolve.
+func (db *DB) CanariesDue(ctx context.Context, now time.Time) ([]Canary, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT block_index, key_offset, address, funded_sat, state, worker_id, deadline
+		FROM claim_canaries WHERE state = ? AND deadline <= ?`, CanaryDealt, now.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("store: canaries due: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Canary
+	for rows.Next() {
+		var c Canary
+		var idx, off, sat, deadline int64
+		if err := rows.Scan(&idx, &off, &c.Address, &sat, &c.State, &c.WorkerID, &deadline); err != nil {
+			return nil, fmt.Errorf("store: scan canary: %w", err)
+		}
+		c.BlockIndex, c.KeyOffset, c.FundedSat, c.Deadline = uint64(idx), uint64(off), uint64(sat), deadline
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// Ban excludes a worker from leasing.
+func (db *DB) Ban(ctx context.Context, workerID, reason, evidence string) error {
+	if workerID == "" || reason == "" {
+		return errors.New("store: a ban needs a worker and a reason")
+	}
+	_, err := db.sql.ExecContext(ctx, `
+		INSERT INTO bans (worker_id, reason, evidence, banned_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(worker_id) DO NOTHING`, workerID, reason, evidence, time.Now().Unix())
+	if err != nil {
+		return fmt.Errorf("store: ban: %w", err)
+	}
+	return nil
+}
+
+// IsBanned reports whether a worker is excluded, and why.
+func (db *DB) IsBanned(ctx context.Context, workerID string) (bool, string, error) {
+	var reason string
+	err := db.sql.QueryRowContext(ctx, `SELECT reason FROM bans WHERE worker_id = ?`, workerID).Scan(&reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", fmt.Errorf("store: is banned: %w", err)
+	}
+	return true, reason, nil
 }
 
 // Stats summarizes a campaign's progress.
