@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/0xmvercosa/puzzlebtc/internal/attest"
 	"github.com/0xmvercosa/puzzlebtc/internal/keyspace"
 	"github.com/0xmvercosa/puzzlebtc/internal/proof"
 	"github.com/0xmvercosa/puzzlebtc/internal/store"
@@ -37,6 +38,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /v1/lease", s.handleLease)
 	mux.HandleFunc("POST /v1/submit", s.handleSubmit)
 	mux.HandleFunc("GET /v1/progress", s.handleProgress)
+	mux.HandleFunc("GET /v1/attest/root", s.handleAttestRoot)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -136,6 +138,29 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("SOLUTION FOUND", "worker", req.WorkerID, "campaign", s.co.Campaign().ID, "ticket", receipt.TicketID)
 	}
 	writeJSON(w, http.StatusOK, receipt)
+}
+
+// handleAttestRoot serves the commitment to every lease issued so far.
+//
+// It is safe to serve publicly, and it is meant to be: the root reveals nothing
+// about who holds what, and being served openly is what lets a participant
+// archive it independently. A commitment only anybody could have seen after the
+// fact is not a commitment.
+func (s *Server) handleAttestRoot(w http.ResponseWriter, r *http.Request) {
+	root, err := s.co.PublishRoot(r.Context())
+	switch {
+	case errors.Is(err, ErrAttestationDisabled):
+		writeError(w, http.StatusNotFound, "attestation_disabled", "this campaign publishes no lease commitments")
+		return
+	case errors.Is(err, attest.ErrEmptyTree):
+		writeError(w, http.StatusNotFound, "no_leases_yet", "no leases have been issued yet")
+		return
+	case err != nil:
+		s.log.Error("attest root failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal", "could not publish the root")
+		return
+	}
+	writeJSON(w, http.StatusOK, root)
 }
 
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {

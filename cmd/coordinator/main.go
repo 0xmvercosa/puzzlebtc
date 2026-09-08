@@ -13,6 +13,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,9 +33,16 @@ import (
 	"github.com/0xmvercosa/puzzlebtc/internal/store"
 )
 
-// secretEnv names the environment variable holding the canary secret. It is not
-// a flag on purpose: flags land in shell history and in `ps` output.
-const secretEnv = "PUZZLEPOOL_SECRET"
+// These name the environment variables holding the campaign's secrets. Neither
+// is a flag on purpose: flags land in shell history and in `ps` output.
+//
+// PUZZLEPOOL_SECRET seeds canary placement and the tiling shift.
+// PUZZLEPOOL_ATTEST_KEY is the ed25519 seed that signs lease commitments;
+// generate one with `attribute -genkey`.
+const (
+	secretEnv = "PUZZLEPOOL_SECRET"
+	attestEnv = "PUZZLEPOOL_ATTEST_KEY"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -51,6 +61,7 @@ func run() error {
 		addr       = flag.String("addr", ":8080", "listen address")
 		leaseTTL   = flag.Duration("lease-ttl", 2*time.Hour, "how long a worker holds a block before it returns to the pool")
 		auditRate  = flag.Float64("deep-audit-rate", 0.02, "fraction of submissions verified in full rather than sampled")
+		noAttest   = flag.Bool("no-attest", false, "run without a lease-commitment key; gives up attribution")
 		unblinded  = flag.Bool("unblinded", false, "hand out key ranges instead of curve points; only for debugging a worker against a known block")
 	)
 	flag.Parse()
@@ -64,6 +75,22 @@ func run() error {
 	}
 	if *targetHex == "" {
 		return errors.New("-target-hash160 is required: the coordinator will not guess what it is searching for")
+	}
+
+	// Attestation is what makes a swept prize attributable, and the commitment
+	// has to exist before anything is found. Refusing to start without it is
+	// deliberate: a campaign that runs for a week and then adds the key has a
+	// week of leases nobody can be held to. Checked here, before anything
+	// touches the disk, so a misconfiguration fails on the first line.
+	var attestKey ed25519.PrivateKey
+	if seedHex := strings.TrimSpace(os.Getenv(attestEnv)); seedHex != "" {
+		seed, err := hex.DecodeString(seedHex)
+		if err != nil || len(seed) != ed25519.SeedSize {
+			return fmt.Errorf("%s must be %d bytes of hex; generate one with `attribute -genkey`", attestEnv, ed25519.SeedSize)
+		}
+		attestKey = ed25519.NewKeyFromSeed(seed)
+	} else if !*noAttest {
+		return fmt.Errorf("%s is not set. Generate one with `attribute -genkey`, publish the public half with the campaign, and keep the private half. Pass -no-attest to run without it and give up naming whoever sweeps a prize outside the protocol", attestEnv)
 	}
 
 	min, max, err := keyspace.PuzzleRange(*puzzleNum)
@@ -101,6 +128,7 @@ func run() error {
 	cfg.DeepAuditRate = *auditRate
 	cfg.CanarySecret = []byte(secret)
 	cfg.Blind = !*unblinded
+	cfg.AttestKey = attestKey
 
 	params := proof.DefaultParams(*blockBits)
 	co, err := coordinator.New(ctx, db, campaign, params, cfg)
@@ -117,7 +145,12 @@ func run() error {
 		"witness_bits", params.WitnessBits,
 		"expected_witnesses_per_block", int(params.ExpectedWitnesses(campaign.BlockSize())),
 		"blind", cfg.Blind,
+		"attesting", len(cfg.AttestKey) > 0,
 	)
+	if pub, err := co.AttestingKey(); err == nil {
+		log.Info("publish this with the campaign; it is what anyone verifies an attribution against",
+			"attest_public_key", hex.EncodeToString(pub))
+	}
 	if !cfg.Blind {
 		log.Warn("BLINDING IS OFF: workers receive private key ranges and can keep any prize they find without running a discrete log first")
 	}

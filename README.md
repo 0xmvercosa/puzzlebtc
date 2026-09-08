@@ -435,6 +435,13 @@ quase tão bom quanto ter a chave.
   de trabalho que fez, não o prêmio inteiro. Um pool que fosse metade desertores
   ainda pagaria 86% do que um pool limpo pagaria a quem é honesto.
 
+  **E ele fica com o nome nisso.** Todo lease entra num registro append-only, e o
+  coordenador publica periodicamente um compromisso assinado sobre esse registro
+  — uma raiz que não revela nada sobre quem tem o quê. Se uma chave do puzzle
+  aparecer na blockchain, abre-se a folha correspondente: o recibo, o caminho de
+  Merkle e a assinatura. Qualquer um com a chave pública da campanha confere que
+  o compromisso é anterior ao saque, sem precisar acreditar em nós.
+
   Contas, tabelas e limites em [`docs/DISSUASAO.md`](docs/DISSUASAO.md) e
   [`docs/CLIENTE_MODIFICADO.md`](docs/CLIENTE_MODIFICADO.md).
 - **A distribuição depende de quem opera.** O prêmio chega a um endereço

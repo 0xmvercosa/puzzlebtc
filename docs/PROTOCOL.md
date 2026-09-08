@@ -10,6 +10,7 @@ POST /v1/lease     → recebe o lote + parâmetros + watchlist
    (varre o lote)
 POST /v1/submit    → entrega a prova, recebe o ticket
 GET  /v1/progress  → estado da campanha
+GET  /v1/attest/root → compromisso assinado sobre os leases emitidos
 GET  /healthz
 ```
 
@@ -186,6 +187,32 @@ topo de linha. Ele é dimensionado pela CPU de propósito, para que uma máquina
 comum consiga fechar um lote inteiro numa sessão. Quem tem mais capacidade pega
 mais lotes, nunca lotes maiores, para o ticket continuar valendo o mesmo trabalho
 para todo mundo.
+
+## 5. A raiz de atestação
+
+```http
+GET /v1/attest/root
+```
+
+```json
+{
+  "campaign_id": "puzzle-71",
+  "root": "60ca1a25…",
+  "leaves": 148302,
+  "published_at": 1789000000,
+  "public_key": "1772e33a…",
+  "signature": "d679ce85…"
+}
+```
+
+Compromisso assinado sobre **todos os leases já emitidos**, sem revelar nenhum.
+É servido aberto de propósito: um compromisso que só o operador pudesse ver
+depois do fato não seria compromisso. Arquive a resposta com data — é ela que
+transforma, mais tarde, "este participante estava com este terreno" em algo
+conferível por qualquer um.
+
+`404 attestation_disabled` significa que a campanha roda sem chave de atestação,
+e portanto sem atribuição. Ver [`DISSUASAO.md`](DISSUASAO.md).
 
 ## Limites
 

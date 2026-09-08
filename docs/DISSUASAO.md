@@ -151,16 +151,50 @@ melhor que zero.
 
 ## 4. Ele fica com o nome nisso
 
-O coordenador assina o lease antes de o lote ser varrido. Esse registro diz, com
-carimbo de tempo anterior ao roubo: **este participante estava com este terreno.**
+Todo lease entra num registro append-only. O coordenador assina periodicamente um
+compromisso sobre esse registro inteiro — uma raiz de Merkle com assinatura
+Ed25519 — e publica a raiz. A raiz não revela nada: não diz quem tem o quê, nem
+quantos lotes cada um tem, nem onde eles ficam.
 
-Quando uma chave do puzzle aparece na blockchain, `Campaign.BlockIndexOf` diz em
-qual lote ela estava, e o lease diz quem estava com o lote. Não é suspeita, é
-correspondência aritmética verificável por qualquer um, publicada antes do crime.
+O que ela faz é fixar o passado. Quando uma chave do puzzle aparece na
+blockchain, o operador abre **uma folha**: o recibo daquele lote, o caminho de
+Merkle até uma raiz já publicada, e a assinatura. Quem tiver a chave pública da
+campanha confere sozinho, sem confiar no operador:
 
-Um projeto aberto com lista pública de participantes e endereço de pagamento em
-arquivo transforma um roubo anônimo em um roubo assinado. As moedas ficam
-marcadas desde o primeiro bloco.
+```
+o coordenador se comprometeu, no instante T, com "o participante W tem o bloco j"
+o bloco j cobre as chaves [lo, hi]
+a chave varrida no instante T' > T cai em [lo, hi]
+logo W era quem estava com aquele terreno
+```
+
+A ordem importa mais que a criptografia. Um registro escrito **depois** de ver o
+roubo não prova nada — o operador poderia ter escrito qualquer nome ali. Por isso
+a raiz é publicada em cadência, e deve ir para algum lugar cujo carimbo de tempo
+o operador não controle: o repositório, um post, um `OP_RETURN`.
+
+Pelo mesmo motivo o registro nunca é servido inteiro: um recibo nomeia um índice
+de bloco, e índice de bloco é justamente o que o lote cego esconde. Publica-se a
+raiz; abre-se uma folha de cada vez, quando há motivo.
+
+```bash
+attribute -genkey                                    # a chave, uma vez
+attribute -db pool.db -campaign puzzle-71 -root      # a raiz, em cadência
+attribute -db pool.db -campaign puzzle-71 -key 4000… # a folha, se precisar
+```
+
+Está em `internal/attest`, e os testes incluem cada reescrita que um operador
+desonesto tentaria: trocar o nome no recibo, trocar o bloco, fabricar um recibo,
+assinar com outra chave, mover a raiz para outra campanha, retroagir o carimbo,
+adulterar o caminho. Todas falham.
+
+Duas honestidades sobre o alcance disso. Primeira: identidade de participante é
+pseudônima, então o que fica marcado é o pseudônimo, o endereço de pagamento em
+arquivo e o histórico de trabalho — não um nome civil. Segunda: o registro não
+acusa ninguém sozinho. Um lote que expirou sem ser varrido e um lote cujo dono
+reportou honestamente aparecem exatamente iguais ali. O que ele tira é o
+anonimato, e as moedas do endereço mais observado do Bitcoin ficam marcadas desde
+o primeiro bloco.
 
 ## O que um desertor custa a quem é honesto
 

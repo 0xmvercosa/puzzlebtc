@@ -5,6 +5,7 @@ package coordinator
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -56,6 +57,12 @@ type Config struct {
 	// too short and slow workers lose finished work, too long and a crashed
 	// worker parks a block for hours.
 	LeaseTTL time.Duration
+
+	// AttestKey signs the commitments in internal/attest: the record of who was
+	// handed which ground, published before anyone could have found anything.
+	// Nil disables attestation, and a campaign running without it has no way to
+	// name whoever sweeps a prize outside the protocol.
+	AttestKey ed25519.PrivateKey
 
 	// Blind hands lots out as curve points instead of key ranges, so a worker
 	// never holds the private keys it is sweeping and a modified client cannot
@@ -325,7 +332,7 @@ func (co *Coordinator) leaseOne(ctx context.Context, workerID string) (*Lease, e
 		if taken {
 			continue // already leased or already swept; roll again
 		}
-		return co.buildLease(index, token, tier, now)
+		return co.buildLease(ctx, workerID, index, token, tier, now)
 	}
 	return nil, fmt.Errorf("%w after %d attempts: the campaign keyspace is effectively exhausted",
 		store.ErrNoBlockAvailable, leaseAttempts)
@@ -371,13 +378,21 @@ func (co *Coordinator) recordLease(ctx context.Context, workerID string, index u
 	if taken {
 		return nil, store.ErrNoBlockAvailable
 	}
-	return co.buildLease(index, token, tier, now)
+	return co.buildLease(ctx, workerID, index, token, tier, now)
 }
 
 // buildLease assembles the lease a worker receives for an already-claimed index.
-func (co *Coordinator) buildLease(index uint64, token, tier string, now time.Time) (*Lease, error) {
+func (co *Coordinator) buildLease(ctx context.Context, workerID string, index uint64, token, tier string, now time.Time) (*Lease, error) {
 	blk, err := co.campaign.BlockAt(index)
 	if err != nil {
+		return nil, err
+	}
+	// Record who was handed this ground, before they have it. The lease log is
+	// append-only and is what internal/attest commits to; a record written after
+	// a theft would prove nothing, so it has to be written now and it has to
+	// fail the lease if it cannot be.
+	expires := now.Add(co.cfg.LeaseTTL)
+	if err := co.db.LogLease(ctx, co.campaign.ID, index, workerID, now, expires); err != nil {
 		return nil, err
 	}
 	watchlist, err := co.verifier.Watchlist(blk)
@@ -388,7 +403,7 @@ func (co *Coordinator) buildLease(index uint64, token, tier string, now time.Tim
 		CampaignID: co.campaign.ID,
 		Length:     blk.Len.String(),
 		Token:      token,
-		ExpiresAt:  now.Add(co.cfg.LeaseTTL).Unix(),
+		ExpiresAt:  expires.Unix(),
 		Params:     co.verifier.Params(),
 		Watchlist:  watchlist,
 		Tier:       tier,

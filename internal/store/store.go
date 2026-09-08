@@ -202,6 +202,29 @@ CREATE TABLE IF NOT EXISTS external_claims (
   PRIMARY KEY (campaign_id, lo_block, hi_block, source)
 );
 
+-- Every lease ever issued, append-only, never rewritten.
+--
+-- The blocks table holds current state: a lease that expires and is reissued
+-- overwrites the previous holder. That is right for allocation and wrong for
+-- attribution, which needs to say who held a given piece of ground at a given
+-- moment even after the lease moved on. This table is that history, and it is
+-- what internal/attest commits to.
+--
+-- It is never served to workers, in whole or in part. A row names a block index,
+-- and a worker who learns its own block index can recover its lot's first key
+-- far more cheaply than the blind-lot protocol intends. Rows are opened one at a
+-- time, against a published root, when there is a reason to open one.
+CREATE TABLE IF NOT EXISTS lease_log (
+  campaign_id TEXT    NOT NULL REFERENCES campaigns(id),
+  block_index INTEGER NOT NULL,
+  worker_id   TEXT    NOT NULL,
+  issued_at   INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  PRIMARY KEY (campaign_id, block_index, issued_at, worker_id)
+);
+
+CREATE INDEX IF NOT EXISTS lease_log_by_block ON lease_log(campaign_id, block_index);
+
 CREATE TABLE IF NOT EXISTS solutions (
   campaign_id  TEXT PRIMARY KEY REFERENCES campaigns(id),
   block_index  INTEGER NOT NULL,
@@ -312,6 +335,53 @@ func (db *DB) BlockByToken(ctx context.Context, campaignID, token string) (index
 
 // ErrNoSuchLease is returned when a lease token matches no block.
 var ErrNoSuchLease = errors.New("store: no block holds that lease token")
+
+// LeaseRecord is one row of the append-only lease history.
+type LeaseRecord struct {
+	BlockIndex uint64
+	WorkerID   string
+	IssuedAt   int64
+	ExpiresAt  int64
+}
+
+// LogLease appends to the lease history. It is idempotent on the natural key, so
+// a retried lease does not double-count.
+func (db *DB) LogLease(ctx context.Context, campaignID string, index uint64, workerID string, issuedAt, expiresAt time.Time) error {
+	_, err := db.sql.ExecContext(ctx, `
+		INSERT INTO lease_log (campaign_id, block_index, worker_id, issued_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT DO NOTHING`,
+		campaignID, int64(index), workerID, issuedAt.Unix(), expiresAt.Unix())
+	if err != nil {
+		return fmt.Errorf("store: log lease %d: %w", index, err)
+	}
+	return nil
+}
+
+// LeaseHistory returns every lease ever issued for a campaign, oldest block
+// first. It is operator-facing: nothing serves this to a worker.
+func (db *DB) LeaseHistory(ctx context.Context, campaignID string) ([]LeaseRecord, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT block_index, worker_id, issued_at, expires_at
+		FROM lease_log WHERE campaign_id = ?
+		ORDER BY block_index, issued_at, worker_id`, campaignID)
+	if err != nil {
+		return nil, fmt.Errorf("store: lease history: %w", err)
+	}
+	defer rows.Close()
+
+	var out []LeaseRecord
+	for rows.Next() {
+		var r LeaseRecord
+		var idx, issued, expires int64
+		if err := rows.Scan(&idx, &r.WorkerID, &issued, &expires); err != nil {
+			return nil, fmt.Errorf("store: lease history: %w", err)
+		}
+		r.BlockIndex, r.IssuedAt, r.ExpiresAt = uint64(idx), issued, expires
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
 func (db *DB) CompleteBlock(ctx context.Context, campaignID string, index uint64, workerID, token string, witnesses, keysSwept uint64, now time.Time) error {
 	tx, err := db.sql.BeginTx(ctx, nil)

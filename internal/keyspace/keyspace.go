@@ -99,7 +99,8 @@ func NewShiftedCampaign(id string, puzzleNum int, targetHash160 string, min, max
 	}
 	c.base = new(big.Int).Sub(c.Min, shiftBig)
 	if c.base.Sign() <= 0 {
-		return nil, fmt.Errorf("keyspace: shift %d pushes the first block to %s, at or below zero; the range is too close to the bottom of the keyspace to be shifted", shift, c.base)
+		return nil, fmt.Errorf("keyspace: block_bits %d makes the block size 2^%d, which is larger than the distance from the range start (%s) to zero, so the shifted tiling would begin at %s. Lower block_bits, or search a higher puzzle",
+			blockBits, blockBits, c.Min, c.base)
 	}
 
 	// numBlocks = ceil(coveredLen / 2^blockBits) where coveredLen spans from the
