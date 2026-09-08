@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+// canaryHarness is testHarness with the mechanism switched on. The default
+// config leaves it off — see the CanaryEvery field comment — so every test that
+// exercises canaries has to enable it, which is the right way round: a test that
+// silently depended on the default would break the moment the default changed.
+func canaryHarness(t *testing.T) *Coordinator {
+	t.Helper()
+	co := testHarness(t)
+	co.cfg.CanaryEvery = 7 * 24 * time.Hour
+	return co
+}
+
 // fakeChain answers the only question a canary asks, from a fixed set.
 type fakeChain struct {
 	spent map[string]string // address -> txid
@@ -198,7 +209,7 @@ func TestCanaryPlanIsInsideTheBlockAndStable(t *testing.T) {
 // the card hundreds of times daily and leave the laptop untested for a month.
 func TestCanaryCadenceIsPerWorkerNotPerBlock(t *testing.T) {
 	ctx := context.Background()
-	co := testHarness(t)
+	co := canaryHarness(t)
 
 	// Arm plenty, so nothing is limited by supply.
 	for i := uint64(100); i < 130; i++ {
@@ -237,7 +248,7 @@ func TestCanaryCadenceIsPerWorkerNotPerBlock(t *testing.T) {
 // A slow participant must be tested at the same rate as a fast one.
 func TestSlowAndFastWorkersAreTestedEqually(t *testing.T) {
 	ctx := context.Background()
-	co := testHarness(t)
+	co := canaryHarness(t)
 	for i := uint64(200); i < 210; i++ {
 		plan, err := co.PlanCanary(ctx, i)
 		if err != nil {
@@ -267,7 +278,7 @@ func TestSlowAndFastWorkersAreTestedEqually(t *testing.T) {
 // binary. This pins that the mechanism keeps testing after the first time.
 func TestWorkerIsRetestedAfterPassingOnce(t *testing.T) {
 	ctx := context.Background()
-	co := testHarness(t)
+	co := canaryHarness(t)
 	for i := uint64(300); i < 305; i++ {
 		plan, err := co.PlanCanary(ctx, i)
 		if err != nil {
@@ -288,5 +299,27 @@ func TestWorkerIsRetestedAfterPassingOnce(t *testing.T) {
 	}
 	if tests != 4 {
 		t.Fatalf("worker tested %d times over four windows, want 4 — a client that passes once must keep being tested", tests)
+	}
+}
+
+// The mechanism is off unless an operator turns it on. It costs working capital
+// and transaction fees, so a coordinator must never start spending money because
+// of a default nobody chose.
+func TestCanariesAreOffByDefault(t *testing.T) {
+	ctx := context.Background()
+	co := testHarness(t) // deliberately not canaryHarness
+
+	if co.cfg.CanaryEvery != 0 {
+		t.Fatalf("default canary_every = %v, want 0 (off)", co.cfg.CanaryEvery)
+	}
+	plan, err := co.PlanCanary(ctx, 400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := co.ArmCanary(ctx, plan, 50_000, "tx"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := co.tryDealCanary(ctx, "anyone"); ok {
+		t.Error("a canary was dealt with the mechanism disabled")
 	}
 }

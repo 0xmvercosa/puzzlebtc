@@ -1,5 +1,12 @@
 # Canário de resgate
 
+> **Desligado por padrão.** O mecanismo funciona, mas exige capital de giro
+> parado e taxa de transação contínua, e protege sobretudo contra participantes
+> grandes o bastante para valer o ataque — que são poucos e melhor tratados
+> conhecendo quem são. A análise completa das alternativas e do porquê desta
+> decisão está em [`CLIENTE_MODIFICADO.md`](CLIENTE_MODIFICADO.md). Ligue com
+> `canary_every` se um dia tiver nó próprio e capital disponível.
+
 Mecanismo para descobrir que um cliente foi modificado **antes** de ele ter a
 chance de roubar um prêmio, e não depois.
 

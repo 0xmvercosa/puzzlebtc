@@ -67,7 +67,14 @@ type Config struct {
 	// over-test exactly the machines least likely to be someone's only one.
 	//
 	// Shorter means a modified client is caught sooner and costs more in fees.
-	// Zero disables the mechanism.
+	//
+	// It is OFF by default, and that is a decision rather than an oversight. The
+	// mechanism requires the operator to front working capital and to keep paying
+	// transaction fees, and it only meaningfully protects against participants
+	// large enough for the attack to be worth building — who are few, and better
+	// handled by knowing who they are. See docs/CLIENTE_MODIFICADO.md.
+	//
+	// Zero disables it.
 	CanaryEvery time.Duration
 	// CanarySecret seeds canary placement and witness sampling. Losing it
 	// invalidates every outstanding lease; leaking it lets a worker fake the
@@ -80,7 +87,7 @@ func DefaultConfig() Config {
 	return Config{
 		LeaseTTL:      2 * time.Hour,
 		DeepAuditRate: 0.02,
-		CanaryEvery:   7 * 24 * time.Hour,
+		CanaryEvery:   0, // off; see the field comment
 		Split:         payout.DefaultSplit(),
 	}
 }
