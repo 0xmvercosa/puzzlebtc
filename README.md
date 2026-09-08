@@ -401,11 +401,11 @@ tinha o lote. Não é garantia matemática, e o README não vai fingir que é.
   em **onze segundos** num rig — contra os dez minutos que a transação dele leva
   para confirmar. O pool então transmite uma concorrente.
 
-  E o pool se compromete publicamente a **leiloar até o valor integral do prêmio
-  em taxa antes de deixar um desertor ficar com ele.** É crível porque é ruim
-  para nós: preferimos que o minerador fique com o dinheiro a premiar a
-  deserção. Para o ladrão, deixa de ser meio milhão contra a chance de ser pego,
-  e passa a ser meio milhão contra a certeza de não sobrar nada.
+  E o pool se compromete publicamente a **cobrir o lance de um desertor até
+  metade do prêmio.** Metade basta: acima disso, ficar com o prêmio rende menos
+  do que teria rendido entregá-lo. E metade preserva o resto — no pior caso os
+  participantes recebem US$ 284.000 em vez de zero, e o desertor recebe zero em
+  qualquer cenário.
 
   Escapar disso exige submeter direto a um minerador, sem passar pela mempool.
   Isso exige conta, contrato e identificação num pool de mineração — que um

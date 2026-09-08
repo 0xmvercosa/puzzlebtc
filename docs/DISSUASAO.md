@@ -39,18 +39,53 @@ ladrão confirmar.**
 O algoritmo está em `internal/kangaroo`, com teste que recupera uma chave privada
 tendo apenas a pública e o intervalo. Não é descrição, é código que roda.
 
-## O compromisso público
+## O compromisso público: teto de 50%, não de 100%
 
-O pool se compromete, antecipadamente e por escrito, a **leiloar até o valor
-integral do prêmio em taxa de mineração antes de deixar um desertor ficar com
-ele.**
+O pool se compromete, antecipadamente e por escrito, a **cobrir qualquer lance de
+um desertor até metade do valor do prêmio.**
 
-Isso é crível justamente por ser ruim para nós: preferimos que o minerador fique
-com o dinheiro a premiar a deserção. E é o que zera a conta do ladrão. Ele não
-está mais apostando meio milhão contra a chance de ser pego; está apostando meio
-milhão contra a certeza de uma guerra de taxa que consome o prêmio inteiro.
+Metade, não o total, e o motivo importa. Um compromisso de leiloar o prêmio
+inteiro seria um dispositivo do juízo final: dissuadiria só enquanto ninguém o
+testasse, e se alguém testasse destruiria exatamente o que deveria proteger. Os
+participantes honestos ficariam com zero, junto com o ladrão.
 
-O compromisso não custa nada enquanto ninguém desertar.
+Metade basta, e basta com folga. Não é preciso zerar o ladrão — basta que roubar
+renda **menos que ser honesto**:
+
+| fatia do ladrão no pool | ganho sendo honesto | taxa que iguala |
+|---|---|---|
+| 1% | US$ 285.136 | 50% |
+| 10% | US$ 295.360 | 48% |
+| 20% | US$ 306.720 | 46% |
+| 50% | US$ 340.800 | 40% |
+
+Um teto de 50% cobre todos os perfis. Acima dele, ficar com o prêmio rende menos
+do que teria rendido entregá-lo, seja qual for a fatia do desertor.
+
+E o que sobra é distribuído normalmente:
+
+| cenário | taxa paga | participantes recebem | desertor recebe |
+|---|---|---|---|
+| ninguém deserta | 0,1% | US$ 567.432 | — |
+| deserta, recuperamos rápido | 2% | US$ 556.640 | US$ 0 |
+| deserta e briga até o teto | 50% | **US$ 284.000** | US$ 0 |
+
+**No pior caso os participantes recebem metade. Não zero.** E o desertor recebe
+zero em todos os cenários.
+
+O compromisso não custa nada enquanto ninguém desertar, e o caso provável é o
+segundo: recuperação rápida e discreta pelo canal privado, com taxa modesta,
+antes de o desertor perceber. A guerra até o teto é o piso da garantia, não o
+plano.
+
+## O desertor não está disputando só contra nós
+
+No instante em que ele transmite, a chave pública fica exposta **para todo mundo**.
+Não somos os únicos capazes de recuperá-la: qualquer bot de mempool que já observa
+endereços de puzzle pode fazer o mesmo, e esse ecossistema existe.
+
+Ou seja, o compromisso do pool **não cria** esse risco para ele. Ele apenas torna
+explícito um risco que já existe e que ele provavelmente não calculou.
 
 ## A assimetria que decide
 
@@ -74,6 +109,11 @@ com operação montada, identificável, e com muito mais a perder que o prêmio.
 **Confirmação imediata.** Se a transação do ladrão cair no bloco seguinte antes de
 reagirmos, acabou. Com reação em segundos contra um intervalo médio de dez
 minutos, isso é cerca de 2% dos casos.
+
+**A guerra de taxa custa aos honestos também.** Se um desertor brigar até o teto,
+os participantes recebem metade do que receberiam. É um custo real, e é o preço
+de o desertor receber zero. O desenho escolhe metade em vez de nada justamente
+para que o pior caso continue pagando quem trabalhou.
 
 **Campanhas de intervalo muito grande.** Acima do #80 a recuperação passa de
 quatro minutos num rig, e acima do #100 deixa de caber num bloco. Para campanhas
