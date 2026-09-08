@@ -370,10 +370,24 @@ protocolo de resgate, não otimização.
 ### O cliente nunca toca nas suas chaves
 
 O programa que você roda não pede, não lê, não armazena e não transmite chave
-privada sua. Ele precisa apenas de um endereço para onde o pagamento seria
-enviado, que é informação pública. Não existe carteira dentro dele, não existe
-seed, não existe nada para roubar da sua máquina. O código é aberto justamente
-para você conferir isso antes de instalar, e não acreditar na nossa palavra.
+privada sua. A única coisa que ele precisa de você é **um endereço Bitcoin para
+receber**, que é informação pública e não move dinheiro nenhum. Não existe
+carteira dentro dele, não existe seed, não existe nada para roubar da sua
+máquina. O código é aberto justamente para você conferir isso antes de instalar,
+em vez de acreditar na nossa palavra.
+
+### E a chave do prêmio, se for você quem achar?
+
+Ela é enviada ao operador, que executa a distribuição. Vale ser direto sobre uma
+coisa: **não temos como impedir que você veja essa chave.** Ela é calculada na
+sua máquina, passa pela sua memória, e quem controla a máquina consegue lê-la
+com um depurador. Isso não é limitação nossa, é como computador funciona, e
+fechar o código não mudaria nada além de tirar de você a possibilidade de
+auditar o programa.
+
+O que existe é o resgate automático descrito acima, que fecha essa janela em
+milissegundos no cliente oficial, e o registro público de qual participante
+tinha o lote. Não é garantia matemática, e o README não vai fingir que é.
 
 ### Onde isso ainda falha
 

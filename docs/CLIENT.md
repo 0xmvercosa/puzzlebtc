@@ -128,11 +128,38 @@ Uma tela só, com o que importa:
 A mesma informação sai em JSON com `--json`, para quem quiser montar painel
 próprio ou acompanhar um rig com várias máquinas.
 
+## Endereço de pagamento
+
+O cliente pede um endereço Bitcoin na primeira execução e o envia junto com a
+identidade do participante. É a única informação que o pool precisa dele, e ela
+é pública: um endereço não move dinheiro, não deriva chave, e não serve para
+nada além de receber.
+
+```bash
+puzzlebtc address set bc1q...
+puzzlebtc address show
+```
+
+Trocar o endereço é permitido a qualquer momento. O coordenador guarda o
+histórico, para que um pagamento possa sempre ser rastreado até o endereço que
+estava registrado quando a campanha fechou.
+
+Participante sem endereço cadastrado acumula tickets normalmente, mas aparece
+marcado no plano de distribuição e o pagamento fica retido até ele informar um.
+
 ## O que o cliente nunca faz
 
 Não pede chave privada. Não lê carteira. Não acessa arquivo fora do diretório
 dele. Não abre porta de entrada na sua máquina: toda comunicação é ele quem
 inicia, para o coordenador.
 
-Ele precisa de um endereço de pagamento, que é informação pública, e de nada
-mais. O código é aberto para você conferir isso antes de instalar.
+## O que o cliente não consegue fazer, e é honesto dizer
+
+Esconder de você a chave do prêmio, se ela cair no seu lote. Ela é calculada na
+sua máquina e passa pela sua memória, e o dono da máquina sempre pode lê-la com
+um depurador. Fechar o código não resolveria isso, e custaria a única coisa que
+permite você confiar no programa: poder auditá-lo.
+
+O que o cliente faz é montar e enviar a transação de resgate em milissegundos,
+antes de qualquer interação humana. Contra cliente modificado a defesa não é
+técnica, é o registro público de quem tinha o lote.

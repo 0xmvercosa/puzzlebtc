@@ -162,3 +162,26 @@ pagamento, que é a coisa que nunca pode corromper.
 
 Os cinco primeiros somam menos de dois dias e resolvem o muro de escala mais os
 maiores custos por submissão.
+
+---
+
+## Distribuição do prêmio
+
+`cmd/payout` gera o plano de pagamento a partir do livro de tickets:
+
+```bash
+payout -db pool.db -campaign puzzle-71 -prize-btc 7.1
+payout -db pool.db -campaign puzzle-71 -prize-btc 7.1 -format csv > pagar.csv
+```
+
+Sai uma linha por destinatário, com endereço e valor exato em satoshis, e o
+total conferido contra o prêmio antes de imprimir qualquer coisa. Se a soma não
+fechar exatamente, ele recusa emitir o plano.
+
+**Ele não assina nem transmite nada.** A saída é um plano para um humano revisar
+e executar na carteira dele. Uma ferramenta capaz de mover o prêmio sozinha seria
+a coisa mais valiosa de comprometer no projeto inteiro, e precisaria guardar uma
+chave para isso. Esta não guarda nada.
+
+Participante sem endereço cadastrado aparece marcado como `MISSING`, com aviso no
+fim da saída, e o plano não pode ser executado até isso ser resolvido.

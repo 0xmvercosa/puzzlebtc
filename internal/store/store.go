@@ -107,6 +107,24 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE INDEX IF NOT EXISTS tickets_by_worker ON tickets(campaign_id, worker_id);
 
+-- Where each participant gets paid. The address is the only thing the pool needs
+-- from them, and it is public information: no key, no seed, nothing that could
+-- move their funds. It is recorded on first sight and can be changed by the
+-- participant, with history kept so a payout can always be traced to the address
+-- that was on file when the campaign closed.
+CREATE TABLE IF NOT EXISTS participants (
+  worker_id   TEXT PRIMARY KEY,
+  btc_address TEXT NOT NULL,
+  first_seen  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS participant_address_history (
+  worker_id   TEXT    NOT NULL,
+  btc_address TEXT    NOT NULL,
+  changed_at  INTEGER NOT NULL
+);
+
 -- Third-party scan claims: ranges somebody says they already searched. These are
 -- NEVER treated as swept — no proof this project accepts backs them. They only
 -- push those blocks to the back of the allocation queue.
@@ -308,6 +326,89 @@ func (db *DB) ExternalClaims(ctx context.Context, campaignID string) ([]External
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// SetPayoutAddress records where a participant should be paid, keeping the old
+// address in history. Validation of the address format belongs to the caller.
+func (db *DB) SetPayoutAddress(ctx context.Context, workerID, address string) error {
+	if workerID == "" || address == "" {
+		return errors.New("store: worker id and payout address are both required")
+	}
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := time.Now().Unix()
+	var prev string
+	err = tx.QueryRowContext(ctx, `SELECT btc_address FROM participants WHERE worker_id = ?`, workerID).Scan(&prev)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO participants (worker_id, btc_address, first_seen, updated_at)
+			VALUES (?, ?, ?, ?)`, workerID, address, now, now); err != nil {
+			return fmt.Errorf("store: insert participant: %w", err)
+		}
+	case err != nil:
+		return fmt.Errorf("store: read participant: %w", err)
+	case prev != address:
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO participant_address_history (worker_id, btc_address, changed_at)
+			VALUES (?, ?, ?)`, workerID, prev, now); err != nil {
+			return fmt.Errorf("store: archive address: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE participants SET btc_address = ?, updated_at = ? WHERE worker_id = ?`,
+			address, now, workerID); err != nil {
+			return fmt.Errorf("store: update address: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// PayoutAddresses maps every known participant to where they get paid.
+func (db *DB) PayoutAddresses(ctx context.Context) (map[string]string, error) {
+	rows, err := db.sql.QueryContext(ctx, `SELECT worker_id, btc_address FROM participants`)
+	if err != nil {
+		return nil, fmt.Errorf("store: payout addresses: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var id, addr string
+		if err := rows.Scan(&id, &addr); err != nil {
+			return nil, fmt.Errorf("store: scan payout address: %w", err)
+		}
+		out[id] = addr
+	}
+	return out, rows.Err()
+}
+
+// Solution is a recorded winning key.
+type Solution struct {
+	BlockIndex uint64
+	WorkerID   string
+	PrivateKey string
+	FoundAt    int64
+}
+
+// GetSolution returns the campaign's recorded solution, if any.
+func (db *DB) GetSolution(ctx context.Context, campaignID string) (*Solution, error) {
+	var s Solution
+	var idx int64
+	err := db.sql.QueryRowContext(ctx, `
+		SELECT block_index, worker_id, private_key, found_at FROM solutions WHERE campaign_id = ?`,
+		campaignID).Scan(&idx, &s.WorkerID, &s.PrivateKey, &s.FoundAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get solution: %w", err)
+	}
+	s.BlockIndex = uint64(idx)
+	return &s, nil
 }
 
 // Stats summarizes a campaign's progress.

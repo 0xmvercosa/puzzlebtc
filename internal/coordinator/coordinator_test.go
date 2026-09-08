@@ -19,11 +19,13 @@ const (
 	testWitnessBits = 4
 )
 
-func testHarness(t *testing.T) *Coordinator {
+func testHarness(t *testing.T) *Coordinator { return testHarnessAt(t, ":memory:") }
+
+func testHarnessAt(t *testing.T, path string) *Coordinator {
 	t.Helper()
 	ctx := context.Background()
 
-	db, err := store.Open(ctx, ":memory:")
+	db, err := store.Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
